@@ -6,7 +6,19 @@ import itertools  # ask if ok to use this
 # open question: should I include state transistion with states where I could not end up?
 
 gamma = 0.9  # discount factor
-r = np.array(([1, 2, 3], [-1, -2, -3]))  # reward of going up  # reward when going down
+
+R = np.array(
+    (
+        [0, -3, -1, 0, 0, 0, 0, 0],  # start: home
+        [0, 0, 0, -2, -4, 0, 0, 0],  # Auld Triangle
+        [0, 0, 0, -3, -5, 0, 0, 0],  # Lötlampe
+        [0, 0, 0, 0, 0, -4, -5, 0],  # Globetrotter
+        [0, 0, 0, 0, 0, -5, -6, 0],  # Black Sheep
+        [0, 0, 0, 0, 0, 0, 0, -6],   # Limericks 
+        [0, 0, 0, 0, 0, 0, 0, -7],   # Fat Louis
+        [0, 0, 0, 0, 0, 0, 0, 0],    # end: home
+    )
+)
 
 STATES = {
     0: "Start: Home",
@@ -57,8 +69,8 @@ def multilayered_graph(*subset_sizes, P):
     return G
 
 
-# https://stackoverflow.com/questions/14547388/networkx-in-python-draw-node-attributes-as-labels-outside-the-node
 def nudge(pos, x_shift, y_shift):
+    # https://stackoverflow.com/questions/14547388/networkx-in-python-draw-node-attributes-as-labels-outside-the-node
     """Shift the position of label by a given amount in x and y direction."""
     return {n: (x + x_shift, y + y_shift) for n, (x, y) in pos.items()}
 
@@ -71,8 +83,8 @@ P_up = np.array(
         [0, 0, 0, 1, 0, 0, 0, 0],  # Lötlampe -> Globetrotter
         [0, 0, 0, 0, 0, 1, 0, 0],  # Globetrotter -> Limericks
         [0, 0, 0, 0, 0, 1, 0, 0],  # Black Sheep -> Limericks
-        [0, 0, 0, 0, 0, 0, 0, 1],  # Fat Louis -> end: home
         [0, 0, 0, 0, 0, 0, 0, 1],  # Limericks -> end: home
+        [0, 0, 0, 0, 0, 0, 0, 1],  # Fat Louis -> end: home
         [0, 0, 0, 0, 0, 0, 0, 1],  # end: home -> end: home
     )
 )
@@ -87,8 +99,8 @@ P_down = np.array(
         [0, 0, 0, 0, 1, 0, 0, 0],  # Lötlampe -> Black Sheep
         [0, 0, 0, 0, 0, 0, 1, 0],  # Globetrotter -> Fat Louis
         [0, 0, 0, 0, 0, 0, 1, 0],  # Black Sheep -> Fat Louis
-        [0, 0, 0, 0, 0, 0, 0, 1],  # Fat Louis -> end: home
         [0, 0, 0, 0, 0, 0, 0, 1],  # Limericks -> end: home
+        [0, 0, 0, 0, 0, 0, 0, 1],  # Fat Louis -> end: home
         [0, 0, 0, 0, 0, 0, 0, 1],  # end: home -> end: home
     )
 )
@@ -111,21 +123,7 @@ print(P)
 # compute expected rewards for the 50/50 policy
 print("\n#### compute expected rewards for the 50/50 policy-------------------------")
 
-
-R = np.array(
-    (
-        [0, -3, -1, 0, 0, 0, 0, 0],  # start: home
-        [0, 0, 0, -2, -4, 0, 0, 0],  # Auld Triangle
-        [0, 0, 0, -3, -5, 0, 0, 0],  # Lötlampe
-        [0, 0, 0, 0, 0, -4, -5, 0],  # Globetrotter
-        [0, 0, 0, 0, 0, -5, -6, 0],  # Black Sheep
-        [0, 0, 0, 0, 0, 0, 0, -6],  # Limericks -> end: home
-        [0, 0, 0, 0, 0, 0, 0, -7],  # Fat Louis -> end: home
-        [0, 0, 0, 0, 0, 0, 0, 0],  # end: home -> end: home
-    )
-)
 draw_graph(R)
-
 
 # compute expected rewards for the 50/50 policy
 r5050 = np.sum(P * R, axis=1)
@@ -133,8 +131,9 @@ print(r5050)
 
 # compute state values
 print("\n#### compute state values ---------------------------------------")
-v = np.matmul(np.linalg.inv(np.identity(P.shape[0]) - gamma * P), r5050)
-print(np.round(v, 2))
+I = np.identity(P.shape[0])
+v = np.matmul(np.linalg.inv(I - gamma*P), r5050)
+print(v)
 
 ######################
 
