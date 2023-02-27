@@ -1,7 +1,7 @@
 import numpy as np
 import networkx as nx  # ask if ok to use this
 import matplotlib.pyplot as plt
-import itertools # ask if ok to use this
+import itertools  # ask if ok to use this
 
 # open question: should I include state transistion with states where I could not end up?
 
@@ -19,9 +19,9 @@ STATES = {
     7: "End: Home",
 }
 
-#  in question 1 there are rewards written on the edges. also there are rewards defined in the python file for going up or down. 
 
 def draw_graph(P):
+    """Draw a multilayered graph from a numpy array."""
     # Create graph and prepare layers
     subset_sizes = [1, 2, 2, 2, 1]
     G = multilayered_graph(*subset_sizes, P=P)
@@ -33,10 +33,20 @@ def draw_graph(P):
     plt.figure(figsize=(8, 8))
     nx.draw(G, pos, with_labels=False)
     nx.draw_networkx_labels(G, pos=pos_labels)
+    nx.draw_networkx_edge_labels(
+        G,
+        pos=pos,
+        edge_labels=nx.get_edge_attributes(G, "weight"),
+        label_pos=0.35,
+        rotate=False,
+        verticalalignment="baseline",
+    )
     plt.axis("equal")
     plt.show()
 
+
 def multilayered_graph(*subset_sizes, P):
+    """Create a multilayered graph from a numpy array."""
     extents = nx.utils.pairwise(itertools.accumulate((0,) + subset_sizes))
     layers = [range(start, end) for start, end in extents]
     G = nx.from_numpy_array(P, create_using=nx.DiGraph)
@@ -46,25 +56,12 @@ def multilayered_graph(*subset_sizes, P):
         G.add_edges_from(itertools.product(layer1, layer2))
     return G
 
+
 # https://stackoverflow.com/questions/14547388/networkx-in-python-draw-node-attributes-as-labels-outside-the-node
 def nudge(pos, x_shift, y_shift):
-    return {n:(x + x_shift, y + y_shift) for n,(x,y) in pos.items()}
+    """Shift the position of label by a given amount in x and y direction."""
+    return {n: (x + x_shift, y + y_shift) for n, (x, y) in pos.items()}
 
-# P_all = np.array(
-#     (
-#         [0, 0.5, 0.5, 0, 0, 0, 0, 0],  # start: home -> Auld triangle
-#         [0, 0, 0, 0.5, 0.5, 0, 0, 0],  # Auld Triangle -> Globetrotter
-#         [0, 0, 0, 0.5, 0.5, 0, 0, 0],  # Lötlampe -> Globetrotter
-#         [0, 0, 0, 0, 0, 0.5, 0.5, 0],  # Globetrotter -> Limericks
-#         [0, 0, 0, 0, 0, 0.5, 0.5, 0],  # Black Sheep -> Limericks
-#         [0, 0, 0, 0, 0, 0, 0, 1],  # Fat Louis -> end: home
-#         [0, 0, 0, 0, 0, 0, 0, 1],  # Limericks -> end: home
-#         [0, 0, 0, 0, 0, 0, 0, 1],  # end: home -> end: home
-#     )
-# )
-
-
-# draw_graph(P_all)
 
 # state transition matrix for always going up
 P_up = np.array(
@@ -105,13 +102,40 @@ P_down = np.array(
 
 ### your code here ###
 # compute state transitions for the 50/50 policy
+print("\n#### compute state transitions for the 50/50 policy------------------------")
 P = 0.5 * P_up + 0.5 * P_down
 draw_graph(P)
 print(P)
+
+
 # compute expected rewards for the 50/50 policy
+print("\n#### compute expected rewards for the 50/50 policy-------------------------")
+
+
+R = np.array(
+    (
+        [0, -3, -1, 0, 0, 0, 0, 0],  # start: home
+        [0, 0, 0, -2, -4, 0, 0, 0],  # Auld Triangle
+        [0, 0, 0, -3, -5, 0, 0, 0],  # Lötlampe
+        [0, 0, 0, 0, 0, -4, -5, 0],  # Globetrotter
+        [0, 0, 0, 0, 0, -5, -6, 0],  # Black Sheep
+        [0, 0, 0, 0, 0, 0, 0, -6],  # Limericks -> end: home
+        [0, 0, 0, 0, 0, 0, 0, -7],  # Fat Louis -> end: home
+        [0, 0, 0, 0, 0, 0, 0, 0],  # end: home -> end: home
+    )
+)
+draw_graph(R)
+
+
+# compute expected rewards for the 50/50 policy
+r5050 = np.sum(P * R, axis=1)
+print(r5050)
 
 # compute state values
-...
+print("\n#### compute state values ---------------------------------------")
+v = np.matmul(np.linalg.inv(np.identity(P.shape[0]) - gamma * P), r5050)
+print(np.round(v, 2))
+
 ######################
 
 # Question 2:
