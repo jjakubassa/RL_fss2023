@@ -104,7 +104,6 @@ P_down = np.array(
         [0, 0, 0, 0, 0, 0, 0, 1],  # end: home -> end: home
     )
 )
-
 # draw_graph(P_down)
 
 # For all first three questions: after computing state values always print them out!
@@ -112,29 +111,30 @@ P_down = np.array(
 # Question 1:
 # compute the state value by matrix inversion
 
-### your code here ###
 # compute state transitions for the 50/50 policy
-print("\n#### compute state transitions for the 50/50 policy------------------------")
-P = 0.5 * P_up + 0.5 * P_down
-draw_graph(P)
+print("\n#### compute state transitions for the 50/50 policy")
+P = 0.5*P_up + 0.5*P_down
+# draw_graph(P)
 print(P)
 
 
 # compute expected rewards for the 50/50 policy
-print("\n#### compute expected rewards for the 50/50 policy-------------------------")
-
-draw_graph(R)
-
-# compute expected rewards for the 50/50 policy
-r5050 = np.sum(P * R, axis=1)
+print("\n#### compute expected rewards for the 50/50 policy")
+r5050 = np.sum(P*R, axis=1)
+# draw_graph(R)
 print(r5050)
 
 # compute state values
-print("\n#### compute state values ---------------------------------------")
+print("\n#### compute state values")
 I = np.identity(P.shape[0])
-v = np.matmul(np.linalg.inv(I - gamma*P), r5050)
-print(v)
+v = np.linalg.inv(I-gamma*P).dot(r5050)
+print("state values for 50/50 policy:\n", v, "\n")
 
+vup = np.linalg.inv(I-gamma*P).dot(np.sum(P_up*R, axis=1))
+print("state values for always up policy:\n", vup, "\n")
+
+vdown = np.linalg.inv(I-gamma*P).dot(np.sum(P_down*R, axis=1))
+print("state values for always down policy:\n", vdown, "\n")
 ######################
 
 # Question 2:
