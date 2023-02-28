@@ -31,6 +31,33 @@ STATES = {
     7: "End: Home",
 }
 
+# state transition matrix for always going up
+P_up = np.array(
+    (
+        [0, 1, 0, 0, 0, 0, 0, 0],  # start: home -> Auld triangle
+        [0, 0, 0, 1, 0, 0, 0, 0],  # Auld Triangle -> Globetrotter
+        [0, 0, 0, 1, 0, 0, 0, 0],  # Lötlampe -> Globetrotter
+        [0, 0, 0, 0, 0, 1, 0, 0],  # Globetrotter -> Limericks
+        [0, 0, 0, 0, 0, 1, 0, 0],  # Black Sheep -> Limericks
+        [0, 0, 0, 0, 0, 0, 0, 1],  # Limericks -> end: home
+        [0, 0, 0, 0, 0, 0, 0, 1],  # Fat Louis -> end: home
+        [0, 0, 0, 0, 0, 0, 0, 1],  # end: home -> end: home
+    )
+)
+
+# state transition matrix for always going down
+P_down = np.array(
+    (
+        [0, 0, 1, 0, 0, 0, 0, 0],  # start: home -> Lötlampe
+        [0, 0, 0, 0, 1, 0, 0, 0],  # Auld Triangle -> Black Sheep
+        [0, 0, 0, 0, 1, 0, 0, 0],  # Lötlampe -> Black Sheep
+        [0, 0, 0, 0, 0, 0, 1, 0],  # Globetrotter -> Fat Louis
+        [0, 0, 0, 0, 0, 0, 1, 0],  # Black Sheep -> Fat Louis
+        [0, 0, 0, 0, 0, 0, 0, 1],  # Limericks -> end: home
+        [0, 0, 0, 0, 0, 0, 0, 1],  # Fat Louis -> end: home
+        [0, 0, 0, 0, 0, 0, 0, 1],  # end: home -> end: home
+    )
+)
 
 def draw_graph(P):
     """Draw a multilayered graph from a numpy array."""
@@ -75,36 +102,9 @@ def nudge(pos, x_shift, y_shift):
     return {n: (x + x_shift, y + y_shift) for n, (x, y) in pos.items()}
 
 
-# state transition matrix for always going up
-P_up = np.array(
-    (
-        [0, 1, 0, 0, 0, 0, 0, 0],  # start: home -> Auld triangle
-        [0, 0, 0, 1, 0, 0, 0, 0],  # Auld Triangle -> Globetrotter
-        [0, 0, 0, 1, 0, 0, 0, 0],  # Lötlampe -> Globetrotter
-        [0, 0, 0, 0, 0, 1, 0, 0],  # Globetrotter -> Limericks
-        [0, 0, 0, 0, 0, 1, 0, 0],  # Black Sheep -> Limericks
-        [0, 0, 0, 0, 0, 0, 0, 1],  # Limericks -> end: home
-        [0, 0, 0, 0, 0, 0, 0, 1],  # Fat Louis -> end: home
-        [0, 0, 0, 0, 0, 0, 0, 1],  # end: home -> end: home
-    )
-)
-
 # draw_graph(P_up)
-
-# state transition matrix for always going down
-P_down = np.array(
-    (
-        [0, 0, 1, 0, 0, 0, 0, 0],  # start: home -> Lötlampe
-        [0, 0, 0, 0, 1, 0, 0, 0],  # Auld Triangle -> Black Sheep
-        [0, 0, 0, 0, 1, 0, 0, 0],  # Lötlampe -> Black Sheep
-        [0, 0, 0, 0, 0, 0, 1, 0],  # Globetrotter -> Fat Louis
-        [0, 0, 0, 0, 0, 0, 1, 0],  # Black Sheep -> Fat Louis
-        [0, 0, 0, 0, 0, 0, 0, 1],  # Limericks -> end: home
-        [0, 0, 0, 0, 0, 0, 0, 1],  # Fat Louis -> end: home
-        [0, 0, 0, 0, 0, 0, 0, 1],  # end: home -> end: home
-    )
-)
 # draw_graph(P_down)
+
 
 # For all first three questions: after computing state values always print them out!
 
@@ -135,6 +135,8 @@ print("state values for always up policy:\n", vup, "\n")
 
 vdown = np.linalg.inv(I-gamma*P).dot(np.sum(P_down*R, axis=1))
 print("state values for always down policy:\n", vdown, "\n")
+
+
 ######################
 
 # Question 2:
