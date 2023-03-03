@@ -45,3 +45,8 @@ plt.plot(rewards)
 plt.ylabel('rewards')
 plt.xlabel('steps')
 plt.show()
+
+# notes from exercise
+# exploration rate
+# online update of mean
+# ucb: explore more in the beginning and less later
