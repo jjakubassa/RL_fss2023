@@ -110,6 +110,8 @@ def nudge(pos, x_shift, y_shift):
 
 # Question 1:
 # compute the state value by matrix inversion
+print("\n\n#### Question 1:")
+
 
 # compute state transitions for the 50/50 policy
 print("\n#### compute state transitions for the 50/50 policy")
@@ -128,13 +130,13 @@ print(r5050)
 print("\n#### compute state values")
 I = np.identity(P.shape[0])
 v = np.linalg.inv(I-gamma*P).dot(r5050)
-print("state values for 50/50 policy:\n", v, "\n")
+print("state values for 50/50 policy:\n", v)
 
 # vup = np.linalg.inv(I-gamma*P).dot(np.sum(P_up*R, axis=1))
-# print("state values for always up policy:\n", vup, "\n")
+# print("state values for always up policy:\n", vup)
 
 # vdown = np.linalg.inv(I-gamma*P).dot(np.sum(P_down*R, axis=1))
-# print("state values for always down policy:\n", vdown, "\n")
+# print("state values for always down policy:\n", vdown)
 
 
 ######################
@@ -144,6 +146,11 @@ print("state values for 50/50 policy:\n", v, "\n")
 # Let the iteration run so long as the nomr of the state values vector does not change by more than 0.001
 
 ### your code here ###
+
+print("\n\n#### Question 2:")
+print("#### compute the state values of the 50/50 policy by Richardson iteration")
+
+
 δ = 0.001 # accuracy termination threshold
 Δ = 0
 iteration = 1
@@ -155,7 +162,7 @@ while True:
     Δ = 0
     v_i = np.copy(v_i1)
 
-    print("Iteration:", iteration)
+    print("Iteration:\t", iteration)
     
     for i, state in enumerate(P): 
         v_i1[i] = 0
@@ -164,7 +171,7 @@ while True:
                 v_i1[i] += target*(R[i,j]+gamma*v_i[j])
         Δ = max(Δ, abs(v_i[i]-v_i1[i])) # calculate sv change
     
-    print("State values:\n", v_i1, "\n\n")
+    print("State values:\t", v_i1, "\n")
     iteration += 1
     
     if Δ < δ:
@@ -178,6 +185,9 @@ while True:
 # Determine the number of iterations as for the Richardson iteration
 
 ### your code here ###
+print("\n\n#### Question 3:")
+print("#### compute the optimal state values by dynamic programming")
+
 δ = 0.001 # accuracy termination threshold
 Δ = 1
 iteration = 1
@@ -190,7 +200,7 @@ while True:
     Δ = 0
     v_i = np.copy(v_i1)
 
-    print("\n\nIteration:", iteration)
+    print("\nIteration:\t", iteration)
     
     for i, state in enumerate(P):
         temp = {}
@@ -203,10 +213,10 @@ while True:
 
         Δ = max(Δ, abs(v_i[i]-v_i1[i])) # calculate sv change
     
-    print("\nState values:\n", v_i1)
-    print("\nRespective policy:")
+    print("State values:\t", v_i1)
+    print("Respective policy:")
     for k, v in policy.items():
-        print ("\t", k, '-->', v)
+        print ("\t\t", k, '-->', v)
     
     iteration += 1
     
