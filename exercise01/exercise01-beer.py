@@ -130,11 +130,11 @@ I = np.identity(P.shape[0])
 v = np.linalg.inv(I-gamma*P).dot(r5050)
 print("state values for 50/50 policy:\n", v, "\n")
 
-vup = np.linalg.inv(I-gamma*P).dot(np.sum(P_up*R, axis=1))
-print("state values for always up policy:\n", vup, "\n")
+# vup = np.linalg.inv(I-gamma*P).dot(np.sum(P_up*R, axis=1))
+# print("state values for always up policy:\n", vup, "\n")
 
-vdown = np.linalg.inv(I-gamma*P).dot(np.sum(P_down*R, axis=1))
-print("state values for always down policy:\n", vdown, "\n")
+# vdown = np.linalg.inv(I-gamma*P).dot(np.sum(P_down*R, axis=1))
+# print("state values for always down policy:\n", vdown, "\n")
 
 
 ######################
@@ -144,7 +144,33 @@ print("state values for always down policy:\n", vdown, "\n")
 # Let the iteration run so long as the nomr of the state values vector does not change by more than 0.001
 
 ### your code here ###
-...
+δ = 0.001 # accuracy termination threshold
+Δ = 0
+iteration = 1
+
+v_i = np.zeros(len(STATES))
+v_i1 = np.zeros(len(STATES))
+
+while True:
+    Δ = 0
+    v_i = np.copy(v_i1)
+
+    print("Iteration:", iteration)
+    
+    for i, state in enumerate(P): 
+        v_i1[i] = 0
+        for j, target in enumerate(state): # s'
+            if target != 0: # actual link between state and target; technically obsolete due to multiplication but still reads nicer
+                v_i1[i] += target*(R[i,j]+gamma*v_i[j])
+        Δ = max(Δ, abs(v_i[i]-v_i1[i])) # calculate sv change
+    
+    print(v_i1, "\n\n")
+    iteration += 1
+    
+    if Δ < δ:
+        break
+    
+
 ######################
 
 # Question 3:
@@ -152,5 +178,35 @@ print("state values for always down policy:\n", vdown, "\n")
 # Determine the number of iterations as for the Richardson iteration
 
 ### your code here ###
-...
+δ = 0.001 # accuracy termination threshold
+Δ = 1
+iteration = 1
+
+v_i = np.zeros(len(STATES))
+v_i1 = np.zeros(len(STATES))
+policy = {}
+
+while True:
+    Δ = 0
+    v_i = np.copy(v_i1)
+
+    print("Iteration:", iteration)
+    
+    for i, state in enumerate(P):
+        temp = {}
+        for j, target in enumerate(state): # s'
+            if target != 0: # actual link between state and target 
+                temp[STATES[j]] = R[i,j]+gamma*v_i[j] # cache state values per action
+        
+        v_i1[i] = max(temp.values()) # select max value from cache
+        policy[STATES[i]] = max(temp, key=temp.get) # select action connected to max value
+
+        Δ = max(Δ, abs(v_i[i]-v_i1[i])) # calculate sv change
+    
+    print(v_i1)
+    print(policy, "\n\n")
+    iteration += 1
+    
+    if Δ < δ:
+        break
 ######################
