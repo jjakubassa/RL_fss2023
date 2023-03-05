@@ -164,7 +164,7 @@ while True:
                 v_i1[i] += target*(R[i,j]+gamma*v_i[j])
         Δ = max(Δ, abs(v_i[i]-v_i1[i])) # calculate sv change
     
-    print(v_i1, "\n\n")
+    print("State values:\n", v_i1, "\n\n")
     iteration += 1
     
     if Δ < δ:
@@ -190,7 +190,7 @@ while True:
     Δ = 0
     v_i = np.copy(v_i1)
 
-    print("Iteration:", iteration)
+    print("\n\nIteration:", iteration)
     
     for i, state in enumerate(P):
         temp = {}
@@ -203,8 +203,11 @@ while True:
 
         Δ = max(Δ, abs(v_i[i]-v_i1[i])) # calculate sv change
     
-    print(v_i1)
-    print(policy, "\n\n")
+    print("\nState values:\n", v_i1)
+    print("\nRespective policy:")
+    for k, v in policy.items():
+        print ("\t", k, '-->', v)
+    
     iteration += 1
     
     if Δ < δ:
