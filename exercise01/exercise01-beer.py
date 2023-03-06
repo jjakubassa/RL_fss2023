@@ -198,11 +198,11 @@ policy = {}
 
 while True:
     Δ = 0
-    v_i = np.copy(v_i1)
 
     print("\nIteration:\t", iteration)
     
-    for i, state in enumerate(P):
+    for i, state in reversed(list(enumerate(P))):
+        v_i = np.copy(v_i1)
         temp = {}
         for j, target in enumerate(state): # s'
             if target != 0: # actual link between state and target 
@@ -215,7 +215,7 @@ while True:
     
     print("State values:\t", v_i1)
     print("Respective policy:")
-    for k, v in policy.items():
+    for k, v in reversed(policy.items()):
         print ("\t\t", k, '-->', v)
     
     iteration += 1
@@ -223,3 +223,5 @@ while True:
     if Δ < δ:
         break
 ######################
+
+# q3- inplace, 
