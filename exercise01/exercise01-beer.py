@@ -152,7 +152,6 @@ print("#### compute the state values of the 50/50 policy by Richardson iteration
 
 
 δ = 0.001 # accuracy termination threshold
-Δ = 0
 iteration = 1
 
 v_i = np.zeros(len(STATES))
@@ -189,7 +188,6 @@ print("\n\n#### Question 3:")
 print("#### compute the optimal state values by dynamic programming")
 
 δ = 0.001 # accuracy termination threshold
-Δ = 1
 iteration = 1
 
 v_i = np.zeros(len(STATES))
