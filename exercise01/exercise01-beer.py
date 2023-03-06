@@ -160,11 +160,11 @@ v_i1 = np.zeros(len(STATES))
 
 while True:
     Δ = 0
-    v_i = np.copy(v_i1)
 
     print("Iteration:\t", iteration)
     
-    for i, state in enumerate(P): 
+    for i, state in reversed(list(enumerate(P))): 
+        v_i = np.copy(v_i1)
         v_i1[i] = 0
         for j, target in enumerate(state): # s'
             if target != 0: # actual link between state and target; technically obsolete due to multiplication but still reads nicer
