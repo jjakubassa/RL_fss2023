@@ -23,7 +23,7 @@ rewards_cum = [0] # custom
 actions = list(range(0, env.action_space.n))
 
 # idea: continuously sample arms (n times each) and then progressively eliminate actions with lowest expected return
-n = 1 # how often should each arm be sampled between each halving of actions
+n = 3 # how often should each arm be sampled between each halving of actions
 
 
 for i_episode in range(5000):
@@ -31,8 +31,8 @@ for i_episode in range(5000):
     print("episode Number is", i_episode)  
 
     if len(actions) > 1 and (i_episode+1) % (len(actions)*n) == 0:
-        ceil = np.ceil((len(actions)/2))
-        for x in range(int(ceil)):
+        floor = np.floor((len(actions)/2))
+        for x in range(int(floor)):
             remove = rewards_per_action.argmin()
             rewards_per_action = np.delete(rewards_per_action, remove)
             del actions[remove]
