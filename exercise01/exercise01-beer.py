@@ -1,5 +1,5 @@
 import numpy as np
-import networkx as nx  # ask if ok to use this
+# import networkx as nx  # ask if ok to use this
 import matplotlib.pyplot as plt
 import itertools  # ask if ok to use this
 
