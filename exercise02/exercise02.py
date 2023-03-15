@@ -92,7 +92,7 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
                 # if reward == 0:
                 #     reward = -0.04
 
-                # if reward == 0 and done:
+                # if done:
                 #     reward = -1
 
                 trajectory.append(Q(state, action, reward)) # save the trajectory as Q-tuples
@@ -113,9 +113,12 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
             # update q-values from trajectory
             g = 0 # running return
             w = 1 # running importance sampling ratio
+            i = len(discounts)-1
             for state, action, reward_i in reversed(trajectory):
                 ### your code here ###
-                g = gamma*g + reward_i
+                g = discounts[i]*g + reward_i
+                i -= 1
+                
                 c[state, action] = c[state, action] + w
                 q[state, action] = q[state, action] + w/c[state, action] * (g - q[state, action])
 
@@ -123,6 +126,7 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
                     break
                 
                 w = w*(1/(1-epsilon))
+
     return np.argmax(q, 1)
 
 
