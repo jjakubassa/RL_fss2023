@@ -130,7 +130,7 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
                 if (a := pi(state, q)) != action:
                     break
                 
-                w = w*(1/get_b(state, q, epsilon, action))
+                w = w*(1/(1-epsilon + (epsilon/nr_actions)))
                 
 
     return np.argmax(q, 1)
