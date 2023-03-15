@@ -48,11 +48,16 @@ def pi(state, q):
     return np.argmax(q[state,])
 
 def b(state, q, epsilon):
-    if epsilon >= (x := np.random.rand()):
-        # suboptimal action
+    if epsilon >= (x := np.random.rand()): # suboptimal action
         return np.random.choice(range(len(q[state,])))
     else:
-        return np.argmax(q[state,])
+        t = q[state,]
+        winners = np.argwhere(q[state,] == np.amax(q[state,])).flatten().tolist()
+        if len(winners) == 1:
+            return winners[0]
+        else: # multiple equally good actions
+            return np.random.choice(range(len(winners)))
+
 
 def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.99):
     """
@@ -62,6 +67,7 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
     nr_states = env.observation_space.n
 
     q = np.zeros((nr_states, nr_actions))
+    c = np.zeros((nr_states, nr_actions))
 
     Q = namedtuple('Q', ['state', 'action', 'reward'])
     episode_returns = []
@@ -76,10 +82,27 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
             state = env.reset()
             for t in range(max_t):
                 ### your code here ###
+
+                # if e >= 9600:
+                #     env.render()
+
                 action = b(state, q, epsilon) # get action from behavior policy
                 observation, reward, done, info = env.step(action) # perform action
+
+                # if reward == 0:
+                #     reward = -0.04
+
+                # if reward == 0 and done:
+                #     reward = -1
+
                 trajectory.append(Q(state, action, reward)) # save the trajectory as Q-tuples
                 state = observation # update new state
+
+                # if e >= 9600:
+                #     env.render()
+
+                if done:
+                    break # stop sampling when terminal state is reached
             
             # compute episode reward
             discounts = [gamma ** i for i in range(len(trajectory) + 1)]
@@ -90,12 +113,16 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
             # update q-values from trajectory
             g = 0 # running return
             w = 1 # running importance sampling ratio
-            for action, state, reward_i in reversed(trajectory):
+            for state, action, reward_i in reversed(trajectory):
                 ### your code here ###
                 g = gamma*g + reward_i
-                # TODO: this stuff right here
-                pass
+                c[state, action] = c[state, action] + w
+                q[state, action] = q[state, action] + w/c[state, action] * (g - q[state, action])
 
+                if (a := pi(state, q)) != action:
+                    break
+                
+                w = w*(1/(1-epsilon))
     return np.argmax(q, 1)
 
 
@@ -160,7 +187,7 @@ def evaluate_greedy_policy(env, policy, nr_episodes=1000, t_max=1000):
     
     return np.mean(reward_sums)
 
-env_frozenlake = gym.make('FrozenLake-v1', map_name="4x4")
+env_frozenlake = gym.make('FrozenLake-v1', map_name="4x4", is_slippery=True)
 env_blackjack = FlattenedObservationWrapper(gym.make('Blackjack-v1'))
 
 # below are some default parameters for the control algorithms. You might want to tune them to achieve better results.
