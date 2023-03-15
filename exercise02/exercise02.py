@@ -51,13 +51,23 @@ def b(state, q, epsilon):
     if epsilon >= (x := np.random.rand()): # suboptimal action
         return np.random.choice(range(len(q[state,])))
     else:
-        t = q[state,]
-        winners = np.argwhere(q[state,] == np.amax(q[state,])).flatten().tolist()
+        # see: https://stackoverflow.com/questions/17568612/how-to-make-numpy-argmax-return-all-occurrences-of-the-maximum
+        winners = np.argwhere(q[state,] == max(q[state,])).flatten().tolist()
         if len(winners) == 1:
             return winners[0]
         else: # multiple equally good actions
             return np.random.choice(range(len(winners)))
 
+def get_b(state, q, epsilon, action):
+    winners = np.argwhere(q[state,] == max(q[state,])).flatten().tolist()
+
+    winneramount = len(winners)
+    actionamount = 1/len(q[state,])
+
+    if action in winners:
+        return (1-epsilon)/winneramount + (actionamount*epsilon)
+    else:
+        return actionamount*epsilon
 
 def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.99):
     """
@@ -73,8 +83,6 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
     episode_returns = []
     episode_lengths = []
 
-    # init pi as target policy: argmax of q
-
     with tqdm.trange(nr_episodes, desc='Training', unit='episodes') as tepisodes:
         for e in tepisodes:
             trajectory = [] # save the trajectory using Q-tuples here
@@ -83,23 +91,22 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
             for t in range(max_t):
                 ### your code here ###
 
-                # if e >= 9600:
-                #     env.render()
-
                 action = b(state, q, epsilon) # get action from behavior policy
                 observation, reward, done, info = env.step(action) # perform action
 
-                # if reward == 0:
+                # if reward == 0 and not done:
+                #     # punish steps
                 #     reward = -0.04
 
-                # if done:
+                # if done and state != 15:
+                #     # env.render()
                 #     reward = -1
 
                 trajectory.append(Q(state, action, reward)) # save the trajectory as Q-tuples
                 state = observation # update new state
 
-                # if e >= 9600:
-                #     env.render()
+                if e >= 9900:
+                    env.render()
 
                 if done:
                     break # stop sampling when terminal state is reached
@@ -113,11 +120,9 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
             # update q-values from trajectory
             g = 0 # running return
             w = 1 # running importance sampling ratio
-            i = len(discounts)-1
             for state, action, reward_i in reversed(trajectory):
                 ### your code here ###
-                g = discounts[i]*g + reward_i
-                i -= 1
+                g = gamma*g + reward_i
                 
                 c[state, action] = c[state, action] + w
                 q[state, action] = q[state, action] + w/c[state, action] * (g - q[state, action])
@@ -125,7 +130,8 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
                 if (a := pi(state, q)) != action:
                     break
                 
-                w = w*(1/(1-epsilon))
+                w = w*(1/get_b(state, q, epsilon, action))
+                
 
     return np.argmax(q, 1)
 
@@ -191,7 +197,7 @@ def evaluate_greedy_policy(env, policy, nr_episodes=1000, t_max=1000):
     
     return np.mean(reward_sums)
 
-env_frozenlake = gym.make('FrozenLake-v1', map_name="4x4", is_slippery=True)
+env_frozenlake = gym.make('FrozenLake-v1', map_name="8x8", is_slippery=True)
 env_blackjack = FlattenedObservationWrapper(gym.make('Blackjack-v1'))
 
 # below are some default parameters for the control algorithms. You might want to tune them to achieve better results.
@@ -201,6 +207,7 @@ env_blackjack = FlattenedObservationWrapper(gym.make('Blackjack-v1'))
 
 # SARSA_blackjack_policy = SARSA(env_blackjack, epsilon=0.051, alpha=0.1, nr_episodes=10000, max_t=1000, gamma=0.99)
 # print("Mean episode reward from SARSA trained policy on BlackJack: ", evaluate_greedy_policy(env_blackjack, SARSA_blackjack_policy))
+
 
 MC_frozenlake_policy = MCOffPolicyControl(env_frozenlake, epsilon=0.051, nr_episodes=10000, max_t=1000, gamma=0.99)
 print("Mean episode reward from MC trained policy on FrozenLake: ", evaluate_greedy_policy(env_frozenlake, MC_frozenlake_policy))
