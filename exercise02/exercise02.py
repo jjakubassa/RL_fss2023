@@ -94,6 +94,65 @@ def plot_convergence_curve(cum_episode_returns, episode_returns, mean_episode_re
     plt.tight_layout()
     plt.show()
 
+def visualize_policy_arrows(env, policy):
+    # Create a grid to hold the arrow plots
+    fig, ax = plt.subplots()
+    ax.set_aspect('equal', 'box')
+    ax.set_xlim(0, env.desc.shape[1])
+    ax.set_ylim(0, env.desc.shape[0])
+    ax.set_xticks(np.arange(0.5, env.desc.shape[1], 1))
+    ax.set_yticks(np.arange(0.5, env.desc.shape[0], 1))
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
+    ax.grid(False)
+    
+    # Define the arrow colors
+    arrow_colors = {
+        0: 'blue',   # move left
+        1: 'red',    # move down
+        2: 'purple', # move right
+        3: 'green'   # move up
+    }
+    
+    # Define the state mapping
+    state_mapping = {}
+    for s in range(env.action_space.n):
+        x, y = np.unravel_index(s, env.desc.shape)
+        state_mapping[s] = (x, y)
+    
+    # Plot the arrows and terminal states
+    for s in range(env.observation_space.n):
+        x, y = np.unravel_index(s, env.desc.shape)
+        if env.desc[x][y] == b'H' or env.desc[x][y] == b'G':
+            # Terminal state
+            cell = plt.Rectangle((y, env.desc.shape[0] - x - 1), width=1, height=1, facecolor='white', edgecolor='black')
+            ax.add_artist(cell)
+            if env.desc[x][y] == b'H':
+                # Hole
+                circle = plt.Circle((y + 0.5, env.desc.shape[0] - x - 0.5), radius=0.3, color='black')
+                ax.add_artist(circle)
+            else:
+                # Goal
+                circle = plt.Circle((y + 0.5, env.desc.shape[0] - x - 0.5), radius=0.3, color='blue')
+                ax.add_artist(circle)
+        else:
+            # Non-terminal state
+            action = policy[s]
+            dx, dy = {
+                0: (0, -1),   # move left
+                1: (1, 0),    # move down
+                2: (0, 1),    # move right
+                3: (-1, 0)    # move up
+            }[action]
+            arrow_color = arrow_colors[action]
+            cell = plt.Rectangle((y, env.desc.shape[0] - x - 1), width=1, height=1, facecolor='white', edgecolor='black')
+            ax.add_artist(cell)
+            ax.arrow(y + 0.5, env.desc.shape[0] - x - 0.5, dy * 0.3, -dx * 0.3, head_width=0.2, head_length=0.2, color=arrow_color)
+    
+    plt.show()
+
+
+
 
 def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5_000, max_t=1_000, gamma=0.99):
     """
@@ -158,7 +217,7 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5_000, max_t=1_000, gamma=0
                 
     # Plotting the convergence curve
     plot_convergence_curve(cum_episode_returns[1:], episode_returns, mean_episode_returns)
-    # visualize_policy_arrows(env, pi)
+    visualize_policy_arrows(env, pi)
     return np.argmax(q, axis=1)
 
 
@@ -223,7 +282,7 @@ def evaluate_greedy_policy(env, policy, nr_episodes=1_000, t_max=1_000):
     
     return np.mean(reward_sums)
 
-env_frozenlake = gym.make('FrozenLake-v1', map_name="8x8", is_slippery=True)
+env_frozenlake = gym.make('FrozenLake-v1', map_name="4x4", is_slippery=True)
 env_blackjack = FlattenedObservationWrapper(gym.make('Blackjack-v1'))
 
 # below are some default parameters for the control algorithms. You might want to tune them to achieve better results.
@@ -234,7 +293,7 @@ env_blackjack = FlattenedObservationWrapper(gym.make('Blackjack-v1'))
 # SARSA_blackjack_policy = SARSA(env_blackjack, epsilon=0.051, alpha=0.1, nr_episodes=10000, max_t=1000, gamma=0.99)
 # print("Mean episode reward from SARSA trained policy on BlackJack: ", evaluate_greedy_policy(env_blackjack, SARSA_blackjack_policy))
 
-MC_frozenlake_policy = MCOffPolicyControl(env_frozenlake, epsilon=0.051, nr_episodes=10_000, max_t=1_000, gamma=0.99)
+MC_frozenlake_policy = MCOffPolicyControl(env_frozenlake, epsilon=0.051, nr_episodes=1_000_000, max_t=1_000, gamma=0.99)
 print("Mean episode reward from MC trained policy on FrozenLake: ", evaluate_greedy_policy(env_frozenlake, MC_frozenlake_policy))
 
 MC_blackjack_policy = MCOffPolicyControl(env_blackjack, epsilon=0.051, nr_episodes=10_000, max_t=1_000, gamma=0.99)
