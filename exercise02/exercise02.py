@@ -37,18 +37,13 @@ class FlattenedObservationWrapper(gym.ObservationWrapper):
     def observation(self, obs):
         return flatten(self.wrapped_observation_space, obs)
 
-def sample_epsilon_greedy_from_q(q, epsilon, state):
+def sample_epsilon_greedy_from_q(state, q, epsilon): # behavior policy esentially
     """
     given q-values sample with probability epsilon an arbitrary action and with probability 1-epsilon the maximum q-value action (ties broken arbitrarily)
     """
     ### complete code here ###
-
-
-def pi(state, q):
-    return np.argmax(q[state,])
-
-def b(state, q, epsilon):
-    if epsilon >= (x := np.random.rand()): # suboptimal action
+    if epsilon >= np.random.rand(): 
+        # suboptimal action
         return np.random.choice(range(len(q[state,])))
     else:
         # see: https://stackoverflow.com/questions/17568612/how-to-make-numpy-argmax-return-all-occurrences-of-the-maximum
@@ -58,63 +53,92 @@ def b(state, q, epsilon):
         else: # multiple equally good actions
             return np.random.choice(range(len(winners)))
 
-def get_b(state, q, epsilon, action):
-    winners = np.argwhere(q[state,] == max(q[state,])).flatten().tolist()
+def plot_convergence_curve(cum_episode_returns, episode_returns, mean_episode_returns):
+    fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, figsize=(8, 6), facecolor='#292929')
+    fig.patch.set_facecolor('#2B2B2B')
 
-    winneramount = len(winners)
-    actionamount = 1/len(q[state,])
+    # Plot 1: Convergence Curve
+    ax1.set_facecolor('#2B2B2B')
+    ax1.plot(cum_episode_returns, color='#30a2da')
+    ax1.set_xlabel('Episodes', fontsize=12, color='white')
+    # ax1.set_ylabel('Cumulative Episode Returns', fontsize=12, color='white')
+    ax1.tick_params(axis='x', colors='white')
+    ax1.tick_params(axis='y', colors='white')
+    ax1.spines['bottom'].set_color('white')
+    ax1.spines['left'].set_color('white')
+    ax1.set_title('Cumulative Episode Returns', fontsize=14, color='white')
 
-    if action in winners:
-        return (1-epsilon)/winneramount + (actionamount*epsilon)
-    else:
-        return actionamount*epsilon
+    # Plot 2: Episode Returns
+    ax2.set_facecolor('#2B2B2B')
+    ax2.plot(episode_returns, color='#fc4f30')
+    ax2.set_xlabel('Episodes', fontsize=12, color='white')
+    # ax2.set_ylabel('Episode Returns', fontsize=12, color='white')
+    ax2.tick_params(axis='x', colors='white')
+    ax2.tick_params(axis='y', colors='white')
+    ax2.spines['bottom'].set_color('white')
+    ax2.spines['left'].set_color('white')
+    ax2.set_title('Episode Returns', fontsize=14, color='white')
 
-def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.99):
+    # Plot 3: Mean Episode Returns
+    ax3.set_facecolor('#2B2B2B')
+    ax3.plot(mean_episode_returns, color='#e5ae38')
+    ax3.set_xlabel('Episodes', fontsize=12, color='white')
+    # ax3.set_ylabel('Mean Episode Returns', fontsize=12, color='white')
+    ax3.tick_params(axis='x', colors='white')
+    ax3.tick_params(axis='y', colors='white')
+    ax3.spines['bottom'].set_color('white')
+    ax3.spines['left'].set_color('white')
+    ax3.set_title('Mean Episode Returns', fontsize=14, color='white')
+
+    # fire! 
+    plt.tight_layout()
+    plt.show()
+
+
+def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5_000, max_t=1_000, gamma=0.99):
     """
     MC-based off-policy control using weighted importance sampling
     """
     nr_actions = env.action_space.n
     nr_states = env.observation_space.n
 
+    # init q table, c table and target policy pi
     q = np.zeros((nr_states, nr_actions))
     c = np.zeros((nr_states, nr_actions))
+    pi = np.zeros(nr_states, dtype=int)
 
     Q = namedtuple('Q', ['state', 'action', 'reward'])
+
+    # init return lists for plotting
+    cum_episode_returns = [0]
+    mean_episode_returns = []
     episode_returns = []
     episode_lengths = []
 
     with tqdm.trange(nr_episodes, desc='Training', unit='episodes') as tepisodes:
         for e in tepisodes:
-            trajectory = [] # save the trajectory using Q-tuples here
             # generate trajectory
+            trajectory = [] # save the trajectory using Q-tuples here
             state = env.reset()
             for t in range(max_t):
                 ### your code here ###
-
-                action = b(state, q, epsilon) # get action from behavior policy
+                action = sample_epsilon_greedy_from_q(state, q, epsilon) # get action from behavior policy
                 observation, reward, done, info = env.step(action) # perform action
-
-                # if reward == 0 and not done:
-                #     # punish steps
-                #     reward = -0.04
-
-                # if done and state != 15:
-                #     # env.render()
-                #     reward = -1
-
                 trajectory.append(Q(state, action, reward)) # save the trajectory as Q-tuples
                 state = observation # update new state
 
-                if e >= 9900:
-                    env.render()
+                # if e >= 19000: # this is for watching the agent move
+                #     env.render()
 
-                if done:
-                    break # stop sampling when terminal state is reached
+                if done: # stop sampling when terminal state is reached
+                    break 
             
-            # compute episode reward
+            # compute episode reward; for plotting later on
             discounts = [gamma ** i for i in range(len(trajectory) + 1)]
             R = sum([a * b for a, (_, _, b) in zip(discounts, trajectory)])
             episode_returns.append(R)
+            cum_episode_returns.append(cum_episode_returns[-1]+R)
+            mean_episode_returns.append(np.mean(episode_returns))
             episode_lengths.append(len(trajectory))
 
             # update q-values from trajectory
@@ -123,20 +147,22 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
             for state, action, reward_i in reversed(trajectory):
                 ### your code here ###
                 g = gamma*g + reward_i
-                
                 c[state, action] = c[state, action] + w
                 q[state, action] = q[state, action] + w/c[state, action] * (g - q[state, action])
-
-                if (a := pi(state, q)) != action:
+                pi[state] = np.argmax(q[state,])
+                
+                if pi[state] != action:
                     break
                 
                 w = w*(1/(1-epsilon + (epsilon/nr_actions)))
                 
+    # Plotting the convergence curve
+    plot_convergence_curve(cum_episode_returns[1:], episode_returns, mean_episode_returns)
+    # visualize_policy_arrows(env, pi)
+    return np.argmax(q, axis=1)
 
-    return np.argmax(q, 1)
 
-
-def SARSA(env, epsilon=0.1, alpha=0.01, nr_episodes=50000, max_t=1000, gamma=0.99):
+def SARSA(env, epsilon=0.1, alpha=0.01, nr_episodes=50_000, max_t=1_000, gamma=0.99):
     """
     On-policy SARSA with epsilon-greedy policy
     """
@@ -148,7 +174,7 @@ def SARSA(env, epsilon=0.1, alpha=0.01, nr_episodes=50000, max_t=1000, gamma=0.9
     q = np.full((nr_states, nr_actions), 0, dtype=np.float32)
 
     # history of episode returns
-    episode_returns = [] 
+    episode_returns = [0] 
     episode_lengths = []
 
     # iterate over episodes
@@ -181,7 +207,7 @@ def SARSA(env, epsilon=0.1, alpha=0.01, nr_episodes=50000, max_t=1000, gamma=0.9
                 
     return np.argmax(q, 1)
 
-def evaluate_greedy_policy(env, policy, nr_episodes=1000, t_max=1000):
+def evaluate_greedy_policy(env, policy, nr_episodes=1_000, t_max=1_000):
     reward_sums = []
     for t in range(nr_episodes):
         state = env.reset()
@@ -208,9 +234,8 @@ env_blackjack = FlattenedObservationWrapper(gym.make('Blackjack-v1'))
 # SARSA_blackjack_policy = SARSA(env_blackjack, epsilon=0.051, alpha=0.1, nr_episodes=10000, max_t=1000, gamma=0.99)
 # print("Mean episode reward from SARSA trained policy on BlackJack: ", evaluate_greedy_policy(env_blackjack, SARSA_blackjack_policy))
 
-
-MC_frozenlake_policy = MCOffPolicyControl(env_frozenlake, epsilon=0.051, nr_episodes=10000, max_t=1000, gamma=0.99)
+MC_frozenlake_policy = MCOffPolicyControl(env_frozenlake, epsilon=0.051, nr_episodes=10_000, max_t=1_000, gamma=0.99)
 print("Mean episode reward from MC trained policy on FrozenLake: ", evaluate_greedy_policy(env_frozenlake, MC_frozenlake_policy))
 
-MC_blackjack_policy = MCOffPolicyControl(env_blackjack, epsilon=0.051, nr_episodes=10000, max_t=1000, gamma=0.99)
+MC_blackjack_policy = MCOffPolicyControl(env_blackjack, epsilon=0.051, nr_episodes=10_000, max_t=1_000, gamma=0.99)
 print("Mean episode reward from MC trained policy on BlackJack: ", evaluate_greedy_policy(env_blackjack, MC_blackjack_policy))
