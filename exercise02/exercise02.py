@@ -94,7 +94,7 @@ def plot_convergence_curve(cum_episode_returns, episode_returns, mean_episode_re
     plt.tight_layout()
     plt.show()
 
-def visualize_policy_arrows(env, policy):
+def visualize_lake_policy(env, policy):
     # Create a grid to hold the arrow plots
     fig, ax = plt.subplots()
     ax.set_aspect('equal', 'box')
@@ -152,8 +152,6 @@ def visualize_policy_arrows(env, policy):
     plt.show()
 
 
-
-
 def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5_000, max_t=1_000, gamma=0.99):
     """
     MC-based off-policy control using weighted importance sampling
@@ -178,7 +176,7 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5_000, max_t=1_000, gamma=0
         for e in tepisodes:
             # generate trajectory
             trajectory = [] # save the trajectory using Q-tuples here
-            state = env.reset()
+            state = env.reset(seed=42)
             for t in range(max_t):
                 ### your code here ###
                 action = sample_epsilon_greedy_from_q(state, q, epsilon) # get action from behavior policy
@@ -193,12 +191,12 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5_000, max_t=1_000, gamma=0
                     break 
             
             # compute episode reward; for plotting later on
-            discounts = [gamma ** i for i in range(len(trajectory) + 1)]
-            R = sum([a * b for a, (_, _, b) in zip(discounts, trajectory)])
-            episode_returns.append(R)
-            cum_episode_returns.append(cum_episode_returns[-1]+R)
-            mean_episode_returns.append(np.mean(episode_returns))
-            episode_lengths.append(len(trajectory))
+            # discounts = [gamma ** i for i in range(len(trajectory) + 1)]
+            # R = sum([a * b for a, (_, _, b) in zip(discounts, trajectory)])
+            # episode_returns.append(R)
+            # cum_episode_returns.append(cum_episode_returns[-1]+R)
+            # mean_episode_returns.append(np.mean(episode_returns))
+            # episode_lengths.append(len(trajectory))
 
             # update q-values from trajectory
             g = 0 # running return
@@ -213,11 +211,12 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5_000, max_t=1_000, gamma=0
                 if pi[state] != action:
                     break
                 
-                w = w*(1/(1-epsilon + (epsilon/nr_actions)))
+                w = w*(1/(1-epsilon))
+                w = w*(1/(1-(1-epsilon)+(epsilon/nr_actions)))
                 
     # Plotting the convergence curve
-    plot_convergence_curve(cum_episode_returns[1:], episode_returns, mean_episode_returns)
-    visualize_policy_arrows(env, pi)
+    # plot_convergence_curve(cum_episode_returns[1:], episode_returns, mean_episode_returns)
+    visualize_lake_policy(env, pi)
     return np.argmax(q, axis=1)
 
 
@@ -283,7 +282,7 @@ def evaluate_greedy_policy(env, policy, nr_episodes=1_000, t_max=1_000):
     return np.mean(reward_sums)
 
 env_frozenlake = gym.make('FrozenLake-v1', map_name="4x4", is_slippery=True)
-env_blackjack = FlattenedObservationWrapper(gym.make('Blackjack-v1'))
+# env_blackjack = FlattenedObservationWrapper(gym.make('Blackjack-v1'))
 
 # below are some default parameters for the control algorithms. You might want to tune them to achieve better results.
 
@@ -293,8 +292,8 @@ env_blackjack = FlattenedObservationWrapper(gym.make('Blackjack-v1'))
 # SARSA_blackjack_policy = SARSA(env_blackjack, epsilon=0.051, alpha=0.1, nr_episodes=10000, max_t=1000, gamma=0.99)
 # print("Mean episode reward from SARSA trained policy on BlackJack: ", evaluate_greedy_policy(env_blackjack, SARSA_blackjack_policy))
 
-MC_frozenlake_policy = MCOffPolicyControl(env_frozenlake, epsilon=0.051, nr_episodes=1_000_000, max_t=1_000, gamma=0.99)
+MC_frozenlake_policy = MCOffPolicyControl(env_frozenlake, epsilon=0.051, nr_episodes=100_000, max_t=1_000, gamma=0.99)
 print("Mean episode reward from MC trained policy on FrozenLake: ", evaluate_greedy_policy(env_frozenlake, MC_frozenlake_policy))
 
-MC_blackjack_policy = MCOffPolicyControl(env_blackjack, epsilon=0.051, nr_episodes=10_000, max_t=1_000, gamma=0.99)
-print("Mean episode reward from MC trained policy on BlackJack: ", evaluate_greedy_policy(env_blackjack, MC_blackjack_policy))
+# MC_blackjack_policy = MCOffPolicyControl(env_blackjack, epsilon=0.051, nr_episodes=10_000, max_t=1_000, gamma=0.99)
+# print("Mean episode reward from MC trained policy on BlackJack: ", evaluate_greedy_policy(env_blackjack, MC_blackjack_policy))
