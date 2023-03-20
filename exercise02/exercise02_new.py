@@ -120,65 +120,69 @@ def visualize_lake_policy(env, policy):
     
     plt.show()
 
-def plot_convergence_curve(cum_episode_returns, episode_returns, mean_episode_returns):
-    fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, figsize=(8, 6), facecolor='#292929')
+def plot_convergence_curve(episode_lengths, cum_episode_returns, episode_returns, mean_episode_returns):
+    fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(8, 6), facecolor='#292929')
     fig.patch.set_facecolor('#2B2B2B')
 
-    # Plot 1: Convergence Curve
-    ax1.set_facecolor('#2B2B2B')
-    ax1.plot(cum_episode_returns, color='#30a2da')
-    ax1.set_xlabel('Episodes', fontsize=12, color='white')
-    # ax1.set_ylabel('Cumulative Episode Returns', fontsize=12, color='white')
-    ax1.tick_params(axis='x', colors='white')
-    ax1.tick_params(axis='y', colors='white')
-    ax1.spines['bottom'].set_color('white')
-    ax1.spines['left'].set_color('white')
-    ax1.set_title('Cumulative Episode Returns', fontsize=14, color='white')
+    # Plot 0: Episode length
+    ax[0,0].set_facecolor('#2B2B2B')
+    ax[0,0].plot(episode_lengths, color='#01d000')
+    ax[0,0].set_xlabel('Episodes', fontsize=12, color='white')
+    # ax[0,0].set_ylabel('Steps per episode', fontsize=12, color='white')
+    ax[0,0].tick_params(axis='x', colors='white')
+    ax[0,0].tick_params(axis='y', colors='white')
+    ax[0,0].spines['bottom'].set_color('white')
+    ax[0,0].spines['left'].set_color('white')
+    ax[0,0].set_title('Steps per episode', fontsize=14, color='white')
+
+
+    # Plot 1: Cumulative Returns
+    ax[1,0].set_facecolor('#2B2B2B')
+    ax[1,0].plot(cum_episode_returns, color='#30a2da')
+    ax[1,0].set_xlabel('Episodes', fontsize=12, color='white')
+    # ax[1,0].set_ylabel('Cumulative Episode Returns', fontsize=12, color='white')
+    ax[1,0].tick_params(axis='x', colors='white')
+    ax[1,0].tick_params(axis='y', colors='white')
+    ax[1,0].spines['bottom'].set_color('white')
+    ax[1,0].spines['left'].set_color('white')
+    ax[1,0].set_title('Cumulative Episode Returns', fontsize=14, color='white')
 
     # Plot 2: Episode Returns
-    ax2.set_facecolor('#2B2B2B')
-    ax2.plot(episode_returns, color='#fc4f30')
-    ax2.set_xlabel('Episodes', fontsize=12, color='white')
-    # ax2.set_ylabel('Episode Returns', fontsize=12, color='white')
-    ax2.tick_params(axis='x', colors='white')
-    ax2.tick_params(axis='y', colors='white')
-    ax2.spines['bottom'].set_color('white')
-    ax2.spines['left'].set_color('white')
-    ax2.set_title('Episode Returns', fontsize=14, color='white')
+    ax[0,1].set_facecolor('#2B2B2B')
+    ax[0,1].plot(episode_returns, color='#fc4f30')
+    ax[0,1].set_xlabel('Episodes', fontsize=12, color='white')
+    # ax[0,1].set_ylabel('Episode Returns', fontsize=12, color='white')
+    ax[0,1].tick_params(axis='x', colors='white')
+    ax[0,1].tick_params(axis='y', colors='white')
+    ax[0,1].spines['bottom'].set_color('white')
+    ax[0,1].spines['left'].set_color('white')
+    ax[0,1].set_title('Episode Returns', fontsize=14, color='white')
 
     # Plot 3: Mean Episode Returns
-    ax3.set_facecolor('#2B2B2B')
-    ax3.plot(mean_episode_returns, color='#e5ae38')
-    ax3.set_xlabel('Episodes', fontsize=12, color='white')
-    # ax3.set_ylabel('Mean Episode Returns', fontsize=12, color='white')
-    ax3.tick_params(axis='x', colors='white')
-    ax3.tick_params(axis='y', colors='white')
-    ax3.spines['bottom'].set_color('white')
-    ax3.spines['left'].set_color('white')
-    ax3.set_title('Mean Episode Returns', fontsize=14, color='white')
+    ax[1,1].set_facecolor('#2B2B2B')
+    ax[1,1].plot(mean_episode_returns, color='#e5ae38')
+    ax[1,1].set_xlabel('Episodes', fontsize=12, color='white')
+    # ax[1,1].set_ylabel('Mean Episode Returns', fontsize=12, color='white')
+    ax[1,1].tick_params(axis='x', colors='white')
+    ax[1,1].tick_params(axis='y', colors='white')
+    ax[1,1].spines['bottom'].set_color('white')
+    ax[1,1].spines['left'].set_color('white')
+    ax[1,1].set_title('Mean Episode Returns', fontsize=14, color='white')
 
     # fire! 
     plt.tight_layout()
     plt.show()
 
-def sample_epsilon_greedy_from_q(q, epsilon, state, random_splits=False):
+def sample_epsilon_greedy_from_q(q, epsilon, state):
     """
     return random action with probability epsilon and the best action according to q-value otherwis
     """
     if epsilon >= np.random.rand(): 
-        # suboptimal action
+        # random suboptimal action
         return np.random.choice(range(len(q[state,])))
     else:
-        if random_splits:
-            # see: https://stackoverflow.com/questions/17568612/how-to-make-numpy-argmax-return-all-occurrences-of-the-maximum
-            winners = np.argwhere(q[state,] == max(q[state,])).flatten().tolist()
-            if len(winners) == 1:
-                return winners[0]
-            else: # multiple equally good actions
-                return np.random.choice(range(len(winners)))
-        else:
-            # always pick first action
-            return np.argmax(q[state,])
+        # always pick first optimal action
+        return np.argmax(q[state,])
 
 def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.99):
     """
@@ -189,31 +193,27 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
 
     q = np.full((nr_states, nr_actions), 0.0, dtype=np.float32)
     c = np.full((nr_states, nr_actions), 0.0, dtype=np.float32)
-    pi = np.zeros(nr_states, dtype=int)
+    pi = np.full(nr_states, 0, dtype=int) # init policy with 0 (go left)
 
     SAR = namedtuple('SAR', ['state', 'action', 'reward'])
     episode_returns = []
     episode_lengths = []
     backtrack_percentages = []
 
-    # custum return lists for plotting
+    # custom return lists for plotting
     cum_episode_returns = [0]
     mean_episode_returns = []
 
     with tqdm.trange(nr_episodes, desc='Training', unit='episodes') as tepisodes:
         for e in tepisodes:
-            trajectory = []
             # generate trajectory
+            trajectory = []
             state = env.reset()[0]
             for t in range(max_t):
                 action = sample_epsilon_greedy_from_q(q, epsilon, state)
-                # your code here #
                 observation, reward, terminated, _, _ = env.step(action) # perform action
                 trajectory.append(SAR(state, action, reward)) # save the trajectory as Q-tuples
                 state = observation # update new state
-
-                # if e >= 19000: # this is for watching the agent move
-                #     env.render()
 
                 if terminated: # stop sampling when terminal state is reached
                     break 
@@ -223,16 +223,14 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
             R = sum([a * b for a, (_, _, b) in zip(discounts, trajectory)])
             episode_returns.append(R)
             episode_lengths.append(len(trajectory))
+
             cum_episode_returns.append(cum_episode_returns[-1]+R)
             mean_episode_returns.append(np.mean(episode_returns))
-            episode_lengths.append(len(trajectory))
 
             # update q-values from trajectory
-            # your code here #
             g = 0 # running return
             w = 1 # running importance sampling ratio
             for state, action, reward_i in reversed(trajectory):
-                ### your code here ###
                 g = gamma*g + reward_i
                 c[state, action] = c[state, action] + w
                 q[state, action] = q[state, action] + w/c[state, action] * (g - q[state, action])
@@ -241,7 +239,7 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
                 if pi[state] != action:
                     break
                 
-                w = w*(1/(1-epsilon))
+                w = w*(1/(1-epsilon+(epsilon/nr_actions)))
             
             # print average return of the last 100 episodes
             if(e % 100 == 0):
@@ -255,7 +253,7 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
                 })
 
     # Plotting the convergence curve
-    plot_convergence_curve(cum_episode_returns[1:], episode_returns, mean_episode_returns)
+    plot_convergence_curve(episode_lengths, cum_episode_returns[1:], episode_returns, mean_episode_returns)
     return np.argmax(q, 1)
 
 def SARSA(env, epsilon=0.1, alpha=0.01, nr_episodes=50000, max_t=1000, gamma=0.99):
@@ -267,35 +265,44 @@ def SARSA(env, epsilon=0.1, alpha=0.01, nr_episodes=50000, max_t=1000, gamma=0.9
 
     # SARSA usees an epsilon-greedy policy
     # The underlying deterministic policy is derived from the q-values
-    q = np.full((nr_states, nr_actions), 10, dtype=np.float32)
-    # count how often a state action pair is sampled
-    c = np.zeros_like(q, dtype=np.int64)
+    q = np.full((nr_states, nr_actions), 0, dtype=np.float32)
 
-    # history of episode returns
-    episode_returns = [] 
+    episode_returns = []
     episode_lengths = []
+
+    # custom return lists for plotting
+    cum_episode_returns = [0]
+    mean_episode_returns = []
 
     # iterate over episodes
     with tqdm.trange(nr_episodes, desc='Training', unit='episodes') as tepisodes:
         for e in tepisodes:
+            rewards = []
             state = env.reset()[0]
             action = sample_epsilon_greedy_from_q(q, epsilon, state)
-            c[state, action] += 1
-            rewards = []
 
             # Collect trajectory
             for t in range(max_t):
-                #print(state, action)
-
-                next_state, reward, done, _, _ = env.step(action)
+                next_state, reward, terminated, _, _ = env.step(action)
+                next_action = sample_epsilon_greedy_from_q(q, epsilon, next_state)
+                q[state, action] = q[state, action] + alpha*(reward + gamma*q[next_state, next_action] - q[state, action])
+                
                 rewards.append(reward)
+                
+                action = next_action
+                state = next_state
 
-                # your code here #
+                if terminated:
+                    break
+                
 
             discounts = [gamma ** i for i in range(len(rewards) + 1)]
             R = sum([a * b for a, b in zip(discounts, rewards)])
             episode_returns.append(R)
             episode_lengths.append(len(rewards))
+
+            cum_episode_returns.append(cum_episode_returns[-1]+R)
+            mean_episode_returns.append(np.mean(episode_returns))
 
             # print average return of the last 100 episodes
             if(e % 100 == 0):
@@ -306,7 +313,9 @@ def SARSA(env, epsilon=0.1, alpha=0.01, nr_episodes=50000, max_t=1000, gamma=0.9
                 'episode length': avg_length
                 })
                 
-    return np.argmax(q, 1)
+    # Plotting the convergence curve
+    plot_convergence_curve(episode_lengths, cum_episode_returns[1:], episode_returns, mean_episode_returns)
+    return np.argmax(q, axis=1)
 
 def evaluate_greedy_policy(env, policy, nr_episodes=1000, t_max=1000):
     reward_sums = []
@@ -333,7 +342,7 @@ env_blackjack = FlattenedObservationWrapper(gym.make('Blackjack-v1', render_mode
 
 epsilon = 0.1
 alpha = 0.1
-nr_episodes = 10000
+nr_episodes = 10_000
 max_t = 400
 gamma = 0.9
 
