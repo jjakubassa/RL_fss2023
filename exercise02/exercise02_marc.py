@@ -118,7 +118,7 @@ def visualize_lake_policy(env, policy):
             ax.add_artist(cell)
             ax.arrow(y + 0.5, env.desc.shape[0] - x - 0.5, dy * 0.3, -dx * 0.3, head_width=0.2, head_length=0.2, color=arrow_color)
     
-    plt.show()
+    return plt
 
 def plot_convergence_curve(episode_lengths, cum_episode_returns, episode_returns, mean_episode_returns):
     fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(8, 6), facecolor='#292929')
@@ -171,7 +171,7 @@ def plot_convergence_curve(episode_lengths, cum_episode_returns, episode_returns
 
     # fire! 
     plt.tight_layout()
-    plt.show()
+    return plt
 
 def sample_epsilon_greedy_from_q(q, epsilon, state):
     """
@@ -191,16 +191,17 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
     nr_actions = env.action_space.n
     nr_states = env.observation_space.n
 
-    q = np.full((nr_states, nr_actions), 0.0, dtype=np.float32)
-    c = np.full((nr_states, nr_actions), 0.0, dtype=np.float32)
-    pi = np.full(nr_states, 0, dtype=int) # init policy with 0 (go left)
+    # initialize q arbitrarily between 0 and 0.01 (during implementation this range was found to be helpful for quicker convergence)
+    q = np.random.random((nr_states, nr_actions))*0.01 
+    c = np.full((nr_states, nr_actions), 0.0, dtype=np.float32) # initialize cumulative sum of WIS weights with 0
+    pi = np.argmax(q, axis=1) # init policy based on q
 
     SAR = namedtuple('SAR', ['state', 'action', 'reward'])
     episode_returns = []
     episode_lengths = []
     backtrack_percentages = []
 
-    # custom return lists for plotting
+    # custom lists for plotting epsiode return
     cum_episode_returns = [0]
     mean_episode_returns = []
 
@@ -210,7 +211,7 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
             trajectory = []
             state = env.reset()[0]
             for t in range(max_t):
-                action = sample_epsilon_greedy_from_q(q, epsilon, state)
+                action = sample_epsilon_greedy_from_q(q, epsilon, state) # sample action
                 observation, reward, terminated, _, _ = env.step(action) # perform action
                 trajectory.append(SAR(state, action, reward)) # save the trajectory as Q-tuples
                 state = observation # update new state
@@ -224,6 +225,7 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
             episode_returns.append(R)
             episode_lengths.append(len(trajectory))
 
+            # custom metrics for plotting
             cum_episode_returns.append(cum_episode_returns[-1]+R)
             mean_episode_returns.append(np.mean(episode_returns))
 
@@ -231,15 +233,15 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
             g = 0 # running return
             w = 1 # running importance sampling ratio
             for state, action, reward_i in reversed(trajectory):
-                g = gamma*g + reward_i
-                c[state, action] = c[state, action] + w
-                q[state, action] = q[state, action] + w/c[state, action] * (g - q[state, action])
-                pi[state] = np.argmax(q[state,])
+                g = gamma*g + reward_i # update return
+                c[state, action] = c[state, action] + w # update cumulative sum of WIS weights
+                q[state, action] = q[state, action] + w/c[state, action] * (g - q[state, action]) # update q
+                pi[state] = np.argmax(q[state,]) # update target policy
                 
                 if pi[state] != action:
                     break
                 
-                w = w*(1/(1-epsilon+(epsilon/nr_actions)))
+                w = w*(1/(1-epsilon+(epsilon/nr_actions))) # update WIS weight
             
             # print average return of the last 100 episodes
             if(e % 100 == 0):
@@ -252,9 +254,9 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
                 'backtrack': "{:.2f}%".format(avg_backtrack_percentage)
                 })
 
-    # Plotting the convergence curve
-    plot_convergence_curve(episode_lengths, cum_episode_returns[1:], episode_returns, mean_episode_returns)
-    return np.argmax(q, 1)
+    # generating the convergence curve and other plots
+    plt = plot_convergence_curve(episode_lengths, cum_episode_returns[1:], episode_returns, mean_episode_returns)
+    return plt, np.argmax(q, 1)
 
 def SARSA(env, epsilon=0.1, alpha=0.01, nr_episodes=50000, max_t=1000, gamma=0.99):
     """
@@ -265,12 +267,15 @@ def SARSA(env, epsilon=0.1, alpha=0.01, nr_episodes=50000, max_t=1000, gamma=0.9
 
     # SARSA usees an epsilon-greedy policy
     # The underlying deterministic policy is derived from the q-values
-    q = np.full((nr_states, nr_actions), 0, dtype=np.float32)
+
+    # initialize q arbitrarily between 0 and 1; terminal states will get set to 0 later on*
+    # values are between 0 and 0.01 (during implementation this range was found to be helpful for quicker convergence)
+    q = np.random.random((nr_states, nr_actions)) * 0.01
 
     episode_returns = []
     episode_lengths = []
 
-    # custom return lists for plotting
+    # custom lists for plotting epsiode return
     cum_episode_returns = [0]
     mean_episode_returns = []
 
@@ -285,22 +290,29 @@ def SARSA(env, epsilon=0.1, alpha=0.01, nr_episodes=50000, max_t=1000, gamma=0.9
             for t in range(max_t):
                 next_state, reward, terminated, _, _ = env.step(action)
                 next_action = sample_epsilon_greedy_from_q(q, epsilon, next_state)
+
+                if terminated:
+                    # *setting q for terminal states 0; necessary due to arbitrary q initilization earlier
+                    q[next_state, next_action] = 0 
+
+                # update q
                 q[state, action] = q[state, action] + alpha*(reward + gamma*q[next_state, next_action] - q[state, action])
-                
                 rewards.append(reward)
                 
+                # update action and state for next time step
                 action = next_action
                 state = next_state
 
-                if terminated:
+                if terminated: # end of episode
                     break
                 
-
+            # compute episode reward
             discounts = [gamma ** i for i in range(len(rewards) + 1)]
             R = sum([a * b for a, b in zip(discounts, rewards)])
             episode_returns.append(R)
             episode_lengths.append(len(rewards))
 
+            # custom metrics for plotting
             cum_episode_returns.append(cum_episode_returns[-1]+R)
             mean_episode_returns.append(np.mean(episode_returns))
 
@@ -313,9 +325,9 @@ def SARSA(env, epsilon=0.1, alpha=0.01, nr_episodes=50000, max_t=1000, gamma=0.9
                 'episode length': avg_length
                 })
                 
-    # Plotting the convergence curve
-    plot_convergence_curve(episode_lengths, cum_episode_returns[1:], episode_returns, mean_episode_returns)
-    return np.argmax(q, axis=1)
+    # generating the convergence curve and other plots
+    plt = plot_convergence_curve(episode_lengths, cum_episode_returns[1:], episode_returns, mean_episode_returns)
+    return plt, np.argmax(q, axis=1)
 
 def evaluate_greedy_policy(env, policy, nr_episodes=1000, t_max=1000):
     reward_sums = []
@@ -342,11 +354,13 @@ env_blackjack = FlattenedObservationWrapper(gym.make('Blackjack-v1', render_mode
 
 epsilon = 0.1
 alpha = 0.1
-nr_episodes = 10_000
+nr_episodes = 10000
 max_t = 400
 gamma = 0.9
 
 # below are some default parameters for the control algorithms. You might want to tune them to achieve better results.
+
+# FROZENLAKE
 for env, name in {
     env_frozenlake_small: "frozenlake_small",
     env_frozenlake_small_slippery: "frozenlake_small_slippery",
@@ -354,19 +368,38 @@ for env, name in {
     env_frozenlake_medium_slippery: "frozenlake_medium_slippery",
     }.items():
     
-    MC_policy = MCOffPolicyControl(env, epsilon=epsilon, nr_episodes=nr_episodes, max_t=max_t, gamma=gamma)
+    ## MC OFF POLICY CONTROL
+    plt0, MC_policy = MCOffPolicyControl(env, epsilon=epsilon, nr_episodes=nr_episodes, max_t=max_t, gamma=gamma)
     print("Mean episode reward from MC trained policy on", name, ": ", evaluate_greedy_policy(env, MC_policy))
-    visualize_lake_policy(env, MC_policy)
-    render_FrozenLake(env, MC_policy, name + "_MC.gif", max_t=100)
+    plt0.savefig("MC_conv_" + name + ".png")
+    plt0.close()
+    render_FrozenLake(env, MC_policy, "MC_pol_" + name + ".gif", max_t=100)
+    plt1 = visualize_lake_policy(env, MC_policy)
+    plt1.savefig("MC_pol_" + name + ".png")
+    plt1.close()
 
-    SARSA_policy = SARSA(env, epsilon=epsilon, alpha=alpha, nr_episodes=nr_episodes, max_t=max_t, gamma=gamma)
+
+    ## SARSA
+    plt2, SARSA_policy = SARSA(env, epsilon=epsilon, alpha=alpha, nr_episodes=nr_episodes, max_t=max_t, gamma=gamma)
     print("Mean episode reward from SARSA trained policy on", name, ": ", evaluate_greedy_policy(env, SARSA_policy))
+    plt2.savefig("SARSA_conv_" + name + ".png")
+    plt2.close()
+    render_FrozenLake(env, SARSA_policy, "SARSA_pol_" + name + ".gif", max_t=100)
     visualize_lake_policy(env, SARSA_policy)
-    render_FrozenLake(env, SARSA_policy, name + "_SARSA.gif", max_t=max_t)
+    plt3 = visualize_lake_policy(env, SARSA_policy)
+    plt3.savefig("SARSA_pol_" + name + ".png")
+    plt3.close()
 
 
-MC_blackjack_policy = MCOffPolicyControl(env_blackjack, epsilon=0.051, nr_episodes=10000, max_t=1000, gamma=0.99)
+# BLACKJACK
+## MC OFF POLICY CONTROL
+plt4, MC_blackjack_policy = MCOffPolicyControl(env_blackjack, epsilon=0.051, nr_episodes=10000, max_t=1000, gamma=0.99)
 print("Mean episode reward from MC trained policy on BlackJack: ", evaluate_greedy_policy(env_blackjack, MC_blackjack_policy))
+plt4.savefig("MC_conv_blackjack.png")
+plt4.close()
 
-SARSA_blackjack_policy = SARSA(env_blackjack, alpha=0.1, epsilon=0.051, nr_episodes=10000, max_t=1000, gamma=0.99)
+## SARSA
+plt5, SARSA_blackjack_policy = SARSA(env_blackjack, alpha=0.1, epsilon=0.051, nr_episodes=10000, max_t=1000, gamma=0.99)
 print("Mean episode reward from SARSA trained policy on BlackJack: ", evaluate_greedy_policy(env_blackjack, SARSA_blackjack_policy))
+plt5.savefig("SARSA_conv_blackjack.png")
+plt5.close()

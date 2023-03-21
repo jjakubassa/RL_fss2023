@@ -1,0 +1,19 @@
+# FROZENLAKE SMALL
+## NON-SLIPPERY
+Mean episode reward from MC trained policy on frozenlake_small :  1.0
+Mean episode reward from SARSA trained policy on frozenlake_small :  1.0
+# SLIPPERY
+Mean episode reward from MC trained policy on frozenlake_small_slippery :  0.757
+Mean episode reward from SARSA trained policy on frozenlake_small_slippery :  0.437
+
+# FROZENLAKE MEDIUM
+## NON-SLIPPERY
+Mean episode reward from MC trained policy on frozenlake_medium :  1.0
+Mean episode reward from SARSA trained policy on frozenlake_medium :  1.0
+## SLIPPERY
+Mean episode reward from MC trained policy on frozenlake_medium_slippery :  0.798
+Mean episode reward from SARSA trained policy on frozenlake_medium_slippery :  0.409
+
+# BLACKJACK
+Mean episode reward from MC trained policy on BlackJack:  -0.158
+Mean episode reward from SARSA trained policy on BlackJack:  -0.125
