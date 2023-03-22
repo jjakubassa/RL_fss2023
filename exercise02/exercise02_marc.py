@@ -192,7 +192,7 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
     nr_states = env.observation_space.n
 
     # initialize q arbitrarily between 0 and 0.01 (during implementation this range was found to be helpful for quicker convergence)
-    q = np.random.random((nr_states, nr_actions))*0.01 
+    q = np.random.random((nr_states, nr_actions)) * 0.01 
     c = np.full((nr_states, nr_actions), 0.0, dtype=np.float32) # initialize cumulative sum of WIS weights with 0
     pi = np.argmax(q, axis=1) # init policy based on q
 
@@ -212,7 +212,7 @@ def MCOffPolicyControl(env, epsilon=0.1, nr_episodes=5000, max_t=1000, gamma=0.9
             state = env.reset()[0]
             for t in range(max_t):
                 action = sample_epsilon_greedy_from_q(q, epsilon, state) # sample action
-                observation, reward, terminated, _, _ = env.step(action) # perform action
+                observation, reward, terminated, truncated, info = env.step(action) # perform action
                 trajectory.append(SAR(state, action, reward)) # save the trajectory as Q-tuples
                 state = observation # update new state
 
@@ -288,10 +288,10 @@ def SARSA(env, epsilon=0.1, alpha=0.01, nr_episodes=50000, max_t=1000, gamma=0.9
 
             # Collect trajectory
             for t in range(max_t):
-                next_state, reward, terminated, _, _ = env.step(action)
+                next_state, reward, terminated, truncated, info = env.step(action)
                 next_action = sample_epsilon_greedy_from_q(q, epsilon, next_state)
 
-                if terminated:
+                if terminated and not truncated:
                     # *setting q for terminal states 0; necessary due to arbitrary q initilization earlier
                     q[next_state, next_action] = 0 
 
