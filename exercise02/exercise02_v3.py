@@ -175,7 +175,7 @@ def plot_convergence_curve(episode_lengths, cum_episode_returns, episode_returns
 
 def sample_epsilon_greedy_from_q(q, epsilon, state):
     """
-    return random action with probability epsilon and the best action according to q-value otherwis
+    return random action with probability epsilon and the best action according to q-value otherwise
     """
     if epsilon >= np.random.rand(): 
         # random suboptimal action
