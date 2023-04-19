@@ -1,3 +1,4 @@
+from os import truncate
 from typing import Any
 import torch
 from torch import nn
@@ -45,9 +46,9 @@ def evaluate_greedy_policy(env, policy, nr_episodes=1000, t_max=1000):
         rewards = []
         for i in range(t_max):
             action = policy(state)
-            state, reward, done, _, _ = env.step(action)
+            state, reward, done, truncated, _ = env.step(action)
             rewards.append(reward)
-            if done:
+            if done or truncated:
                 break
 
         reward_sums.append(np.sum(rewards))
@@ -85,7 +86,7 @@ class QNet(nn.Module):
 
         self.state_size: int = state_size
         self.action_size: int = action_size
-        self.flatten = nn.Flatten()  # what for? necessary?
+        self.flatten = nn.Flatten()
 
         layers = []
         in_features = state_size
@@ -326,11 +327,11 @@ def DQN(
                     q = torch.zeros(len(states))
 
                     for i in range(len(states)):
-                        qs, max_a = target_qnet.forward(next_states[i])
-                        q_next = qs[max_a]
                         if dones[i]:
                             y[i] = rewards[i]
                         else:
+                            qs, max_a = target_qnet.forward(next_states[i])
+                            q_next = qs[max_a]
                             y[i] = rewards[i] + gamma * q_next
                         q[i] = qnet.forward(states[i])[0][actions[i]]
 
@@ -549,6 +550,41 @@ if __name__ == "__main__":
 
     # optimizer = torch.optim.SGD(qnet.parameters(), lr=1e-2)
     # optimizer = torch.optim.RMSprop(qnet.parameters(), lr=0.01)
+
+    cartpole_env = gym.make("CartPole-v1", render_mode="rgb_array")
+    cartpole_observation_space_size = cartpole_env.observation_space.shape[0]
+    cartpole_nr_actions = cartpole_env.action_space.n
+    cartpole_qnet = QNet(
+        cartpole_observation_space_size, cartpole_nr_actions, hidden_size, n_layers
+    )
+    cartpole_optimizer = torch.optim.RMSprop(cartpole_qnet.parameters(), lr=1e-2)
+
+    target_qnet = DQN(
+        cartpole_qnet,
+        cartpole_env,
+        cartpole_optimizer,
+        epsilon=0.7,
+        gamma=0.99,
+        nr_episodes=15_000,
+        max_t=4000,
+        warm_start_steps=500,
+        sync_rate=128,
+        replay_buffer_size=1000,
+        train_frequency=8,
+        batch_size=128,
+    )
+    print(
+        "Mean episode reward from DQN on cartpole policy: ",
+        evaluate_greedy_policy(cartpole_env, target_qnet.act_greedy, 10, 4_000),
+    )
+
+    gym_video(
+        cartpole_qnet.act_greedy,
+        cartpole_env,
+        f"{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx-{cartpole_env.spec.id}",
+        5000,
+    )
+
     mountaincar_env = gym.make(
         "MountainCar-v0", render_mode="rgb_array", max_episode_steps=max_t
     )
