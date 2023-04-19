@@ -5,7 +5,8 @@ import numpy as np
 import gymnasium as gym
 import tqdm
 import random
-from collections import namedtuple
+from collections import namedtuple, deque
+from copy import deepcopy
 
 def gym_video(policy, env, filename, nr_steps = 1000):
     """
@@ -114,7 +115,7 @@ def MC_func_approx(env, qnet, optimizer, epsilon=0.1, nr_episodes=50000, max_t=1
     return np.argmax(q, 1)
 
 # Named tuple for storing experience steps gathered in training
-RB_Experience = collections.namedtuple(
+RB_Experience = namedtuple(
     'Experience', field_names=['state', 'action', 'reward',
                                'done', 'new_state'])
 
@@ -126,7 +127,7 @@ class ReplayBuffer:
     """
 
     def __init__(self, capacity: int) -> None:
-        self.buffer = collections.deque(maxlen=capacity)
+        self.buffer = deque(maxlen=capacity)
 
     def __len__(self) -> None:
         return len(self.buffer)
@@ -153,7 +154,7 @@ def DQN(qnet, env, optimizer, epsilon=0.1, gamma=1.0, nr_episodes=5000, max_t=10
     print(f"Train policy with DQN for {nr_episodes} episodes using at most {max_t} steps, gamma = {gamma}, epsilon = {epsilon}, replay buffer size = {replay_buffer_size}, sync rate = {sync_rate}, warm starting steps for filling the replay buffer = {warm_start_steps}")
 
     buffer = ReplayBuffer(replay_buffer_size)
-    target_qnet = copy.deepcopy(qnet)
+    target_qnet = deepcopy(qnet)
     episode_returns = []
     episode_lengths = []
     nr_terminal_states = []
