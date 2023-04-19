@@ -1,14 +1,18 @@
+from typing import Any
 import torch
 from torch import nn
+
 import torch.nn.functional as F
 import numpy as np
 import gymnasium as gym
 import tqdm
-import random
-from collections import namedtuple
+from random import choices
+from collections import namedtuple, deque
 import matplotlib.pyplot as plt
+
 from hyperopt import fmin, tpe, hp
 import datetime
+from copy import deepcopy
 
 
 def gym_video(policy, env, filename, nr_steps=1000):
@@ -26,7 +30,7 @@ def gym_video(policy, env, filename, nr_steps=1000):
         state = env.reset()[0]
         done = False
         for t in range(nr_steps):
-            action = policy.act_greedy(state)
+            action = policy(state)
             next_state, reward, done, _, _ = env.step(action)
             state = next_state
             if done:
@@ -50,15 +54,11 @@ def evaluate_greedy_policy(env, policy, nr_episodes=1000, t_max=1000):
     return np.mean(reward_sums)
 
 
-def is_first_occurrence(lst, elem):
-    # from ChatGPT
-    return lst.index(elem) == lst.index(elem, 0, lst.index(elem) + 1)
-
-
 def plot_training(e_returns, env, algo_name: str, n: int = 1000):
     # calculate average over every n episodes
     avg_returns = np.mean(np.array(e_returns).reshape(-1, n), 1)
 
+    # create plot
     n_eps = n * np.arange(len(avg_returns))
     fig, ax = plt.subplots()
     ax.plot(
@@ -75,15 +75,16 @@ def plot_training(e_returns, env, algo_name: str, n: int = 1000):
 
 
 class QNet(nn.Module):
-    def __init__(self, state_size, action_size, hidden_size, n_layers: int = 2):
+    def __init__(
+        self, state_size: int, action_size: int, hidden_size: int, n_layers: int = 2
+    ):
         super(QNet, self).__init__()
         # your code here #
         # use torch.nn.init.xavier_uniform to initialize the weights
-        super().__init__()
+        # super().__init__()
 
-        self.state_size = state_size
-        self.action_size = action_size
-
+        self.state_size: int = state_size
+        self.action_size: int = action_size
         self.flatten = nn.Flatten()  # what for? necessary?
 
         layers = []
@@ -101,27 +102,28 @@ class QNet(nn.Module):
             if isinstance(layer, nn.Linear):
                 torch.nn.init.xavier_uniform_(layer.weight)
 
-    def forward(self, state) -> tuple[torch.tensor, int]:
+    def forward(self, state) -> tuple[Any, int]:
         """return q-values and the highest q-value action"""
         # your code here #
         qvals = self.linear_relu_stack(torch.from_numpy(state))
-        action = torch.argmax(qvals)
-        return qvals, action.item()
+        action = torch.argmax(qvals.data).item()
+        assert type(action) == int
+        return qvals, action
 
     def act_epsilon_greedy(self, state, epsilon) -> int:
-        """return with probability epsilon a random action and with probability 1-epsilon the greedy action"""
+        """return with probability epsilon a random action and
+        with probability 1-epsilon the greedy action"""
         # your code here #
         if np.random.random() < epsilon:
             action = np.random.choice(self.action_size)
         else:
-            action = self.forward(state)[1]
+            action = self.act_greedy(state)
         return action
 
-    def act_greedy(self, state):
+    def act_greedy(self, state) -> int:
         """return the greedy action"""
         # your code here #
-        action = self.forward(state)[1]
-        return action  # .item() to return action as int as expected for env
+        return self.forward(state)[1]
 
 
 def MC_func_approx(
@@ -138,7 +140,7 @@ def MC_func_approx(
     SAR = namedtuple("SAR", ["state", "action", "reward"])
     episode_returns = []
     episode_lengths = []
-    greedy_return = []
+    # greedy_return: = []
 
     with tqdm.trange(
         nr_episodes, desc="Training", unit="episodes", disable=hide_progress
@@ -147,16 +149,20 @@ def MC_func_approx(
             trajectory = []
             # generate trajectory
             state = env.reset()[0]
+
             for t in range(max_t):
                 # choose action according to epsilon greedy
                 action = qnet.act_epsilon_greedy(state, epsilon)
+
                 # take a step
                 observation, reward, terminated, truncated, info = env.step(action)
                 trajectory.append(SAR(state, action, reward))
+
                 # update current state
                 state = observation
+
                 # if the environment is in a terminal state stop the sampling
-                if terminated:
+                if terminated or truncated:
                     break
 
             # compute episode reward
@@ -180,37 +186,39 @@ def MC_func_approx(
             optimizer.step()
 
             # print average return of the last 100 episodes
-            if e % 1000 == 0:
-                avg_return = np.mean(episode_returns[-1000:])
-                avg_length = np.mean(episode_lengths[-1000:])
-                greedy_return.append(
-                    evaluate_greedy_policy(  # parallelize?
-                        env, qnet.act_greedy, nr_episodes=10, t_max=1000
-                    )
-                )
+            if e % 10 == 0:
+                avg_return = np.mean(episode_returns[-10:])
+                avg_length = np.mean(episode_lengths[-10:])
+                # greedy_return.append(
+                #     evaluate_greedy_policy(  # parallelize?
+                #         env, qnet.act_greedy, nr_episodes=10, t_max=1000
+                #     )
+                # )
+
                 # avg_backtrack_percentage = np.mean(backtrack_percentages[-100:])
                 tepisodes.set_postfix(
                     {
-                        "episode return": "{:.2f}".format(avg_return),
-                        "episode length": "{:3.2f}".format(avg_length),
-                        "greedy return": f"{greedy_return[-1]:.2f}",
+                        "episode return": f"{avg_return:.2f}",
+                        "episode length": f"{avg_length:3.2f}",
+                        # "greedy return": f"{greedy_return[-1]:.2f}",
                         # 'backtrack': "{:.2f}%".format(avg_backtrack_percentage)
                     }
                 )
 
-    plot_training(episode_returns, env, "MC_func_approx", nr_episodes // 10_000)
+    plot_training(episode_returns, env, "MC_func_approx", nr_episodes // 10)
 
     # Save the model
     torch.save(
         qnet.state_dict(),
         f"{OUTPUT_PATH}/{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx_model.pth",
     )
-    return qnet.act_greedy
+    return qnet
 
 
 # Named tuple for storing experience steps gathered in training
 RB_Experience = namedtuple(
-    "Experience", field_names=["state", "action", "reward", "done", "new_state"]
+    "RB_Experience",
+    ["state", "action", "reward", "done", "new_state"],
 )
 
 
@@ -222,9 +230,9 @@ class ReplayBuffer:
     """
 
     def __init__(self, capacity: int) -> None:
-        self.buffer = collections.deque(maxlen=capacity)
+        self.buffer: deque = deque(maxlen=capacity)
 
-    def __len__(self) -> None:
+    def __len__(self) -> int:
         return len(self.buffer)
 
     def append(self, experience: RB_Experience) -> None:
@@ -236,55 +244,65 @@ class ReplayBuffer:
         self.buffer.append(experience)
 
     def sample(self, batch_size: int):
-        # your code here: Sample randomly a batch of experiences of the indicated size 
-        # from the buffer 
-
-        states, actions, rewards, dones, next_states = ...
-
-        return (
-            np.array(states),
-            np.array(actions),
-            np.array(rewards, dtype=np.float32),
-            np.array(dones, dtype=np.bool),
-            np.array(next_states),
-        )
+        # your code here: Sample randomly a batch of experiences of the indicated size
+        # from the buffer
+        sample = choices(
+            self.buffer, k=batch_size
+        )  # TODO: adjust later to prefer later experiences
+        states = np.array([e.state for e in sample])
+        actions = np.array([e.action for e in sample])
+        rewards = np.array([e.reward for e in sample])
+        dones = np.array([e.done for e in sample])
+        next_states = np.array([e.new_state for e in sample])
+        return states, actions, rewards, dones, next_states
 
 
 def DQN(
     qnet,
     env,
     optimizer,
-    epsilon=0.1,
-    gamma=1.0,
-    nr_episodes=5000,
-    max_t=100,
-    replay_buffer_size=1000000,
-    batch_size=32,
-    warm_start_steps=1000,
-    sync_rate=1024,
-    train_frequency=8,
+    epsilon: float = 0.1,
+    gamma: float = 1.0,
+    nr_episodes: int = 5000,
+    max_t: int = 100,
+    replay_buffer_size: int = 1000000,
+    batch_size: int = 32,
+    warm_start_steps: int = 1000,
+    sync_rate: int = 1024,
+    train_frequency: int = 8,
 ):
     """Deep Q-Learning with experience replay and target network."""
     print(
-        f"Train policy with DQN for {nr_episodes} episodes using at most {max_t} steps, gamma = {gamma}, epsilon = {epsilon}, replay buffer size = {replay_buffer_size}, sync rate = {sync_rate}, warm starting steps for filling the replay buffer = {warm_start_steps}"
+        f"Train policy with DQN for {nr_episodes} episodes using at most {max_t} steps,"
+        f" gamma = {gamma}, epsilon = {epsilon}, replay buffer size ="
+        f" {replay_buffer_size}, sync rate = {sync_rate}, warm starting steps for"
+        f" filling the replay buffer = {warm_start_steps}"
     )
 
     buffer = ReplayBuffer(replay_buffer_size)
-    target_qnet = copy.deepcopy(qnet)
+    target_qnet = deepcopy(qnet)
     episode_returns = []
     episode_lengths = []
-    nr_terminal_states = []
+    nr_terminal_states: list = []
 
     # populate buffer
     state = env.reset()[0]
     for i in range(warm_start_steps):
         # your code here: populate the buffer with warm_start_steps experiences #
+        for t in range(max_t):
+            action = qnet.act_epsilon_greedy(state, epsilon)
+            observation, reward, terminated, truncated, info = env.step(action)
+            buffer.append(RB_Experience(state, action, reward, terminated, observation))
+            state = observation
+            if terminated or truncated:
+                break
         pass
 
     with tqdm.trange(nr_episodes, desc="DQN Training", unit="episodes") as tepisodes:
         for e in tepisodes:
             state = env.reset()[0]
             episode_return = 0.0
+            step_counter = 0
 
             # Collect trajectory
             for t in range(max_t):
@@ -292,11 +310,31 @@ def DQN(
 
                 # step through environment with agent and add experience to buffer
                 with torch.no_grad():
-                    pass
+                    action = qnet.act_epsilon_greedy(state, epsilon)
+                    observation, reward, terminated, truncated, info = env.step(action)
+                    buffer.append(
+                        RB_Experience(state, action, reward, terminated, observation)
+                    )
+                    state = observation
+                    episode_return += reward
+                    if terminated or truncated:
+                        env.reset()
 
                 # calculate training loss on sampled batch
                 if step_counter % train_frequency == 0:
                     # your code here #
+                    states, actions, rewards, dones, next_states = buffer.sample(
+                        batch_size
+                    )
+                    y = torch.zeros(len(states))
+                    q = torch.zeros(len(states))
+
+                    for i in range(len(states)):
+                        q_next = target_qnet.act_greedy(next_states[i])
+                        y[i] = rewards[i] + (1 - dones[0]) * gamma * q_next
+                        q[i] = qnet.forward(states[i])[0][actions[i]]
+
+                    loss = F.mse_loss(q, y)
 
                     # update qnet
                     optimizer.zero_grad()
@@ -312,17 +350,15 @@ def DQN(
 
             tepisodes.set_postfix(
                 {
-                    "mean episode reward": "{:3.2f}".format(
-                        np.mean(episode_returns[-25:])
-                    ),
-                    "mean episode length": "{:3.2f}".format(
-                        np.mean(episode_lengths[-25:])
-                    ),
-                    "nr terminal states in batch": "{:3.2f}".format(
-                        np.mean(nr_terminal_states[-25:])
+                    f"mean episode reward {np.mean(episode_returns[-25:]):3.2f}",
+                    f"mean episode length {np.mean(episode_lengths[-25:]):3.2f}",
+                    (
+                        "nr terminal states in batch"
+                        f" {np.mean(nr_terminal_states[-25:]):3.2f}"
                     ),
                 }
             )
+    return qnet
 
 
 def run_cartpole(params):
@@ -348,15 +384,47 @@ def run_cartpole(params):
     return -1 * evaluate_greedy_policy(cartpole_env, MC_cartpolt_policy)
 
 
+def run_mountain_car(params):
+    epsilon = params["epsilon"]
+    max_t = params["max_t"]
+    mountaincar_env = gym.make(
+        "MountainCar-v0", render_mode="rgb_array", max_episode_steps=max_t
+    )
+    mountaincar_observation_space_size = mountaincar_env.observation_space.shape[0]
+    mountaincar_nr_actions = mountaincar_env.action_space.n
+    mountaincar_qnet = QNet(
+        mountaincar_observation_space_size,
+        mountaincar_nr_actions,
+        5,
+        2,
+    )
+    mountaincar_optimizer = torch.optim.RMSprop(mountaincar_qnet.parameters(), lr=1e-2)
+
+    mountaincar_qnet = MC_func_approx(
+        mountaincar_env,
+        mountaincar_qnet,
+        mountaincar_optimizer,
+        epsilon,
+        1000,
+        max_t,
+        gamma,
+    )
+
+    return -1 * evaluate_greedy_policy(
+        mountaincar_env, mountaincar_qnet.act_greedy, 10, 1000
+    )
+
+
 if __name__ == "__main__":
     # Get the current date and time
     NOW = datetime.datetime.now()
     OUTPUT_PATH = "exercise03/output/"
 
-    epsilon = 0.7213226283289884
-    nr_episodes = 10_000
-    max_t = 10_000  # 400
-    gamma = 0.9999
+    # epsilon = 0.7213226283289884
+    epsilon = 0.7
+    nr_episodes = 100
+    max_t = 4_000
+    gamma = 0.999999
     replay_buffer_size = 10_000
     hidden_size = 5
     n_layers = 1
@@ -369,15 +437,7 @@ if __name__ == "__main__":
     )
     cartpole_optimizer = torch.optim.SGD(cartpole_qnet.parameters(), lr=1e-3)
 
-    mountaincar_env = gym.make("MountainCar-v0", render_mode="rgb_array")
-    mountaincar_observation_space_size = mountaincar_env.observation_space.shape[0]
-    mountaincar_nr_actions = mountaincar_env.action_space.n
-    mountaincar_qnet = QNet(
-        mountaincar_observation_space_size, mountaincar_nr_actions, 8
-    )
-    mountaincar_optimizer = torch.optim.SGD(mountaincar_qnet.parameters(), lr=1e-3)
-
-    MC_cartpolt_policy = MC_func_approx(
+    cartpole_qnet = MC_func_approx(
         cartpole_env,
         cartpole_qnet,
         cartpole_optimizer,
@@ -388,15 +448,49 @@ if __name__ == "__main__":
     )
     print(
         "Mean episode reward from MC_func_approx on cartpole: ",
-        evaluate_greedy_policy(cartpole_env, MC_cartpolt_policy),
+        evaluate_greedy_policy(cartpole_env, cartpole_qnet.act_greedy),
     )
-    gym_video(
-        cartpole_qnet,
-        cartpole_env,
-        f"{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx-{cartpole_env.spec.id}",
-        10_00_000,
-    )
+    # gym_video(
+    #     cartpole_qnet.act_greedy,
+    #     cartpole_env,
+    #     f"{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx-{cartpole_env.spec.id}",
+    #     10_00_000,
+    # )
 
+    # mountaincar_env = gym.make(
+    #     "MountainCar-v0", render_mode="rgb_array", max_episode_steps=max_t
+    # )
+    # mountaincar_observation_space_size = mountaincar_env.observation_space.shape[0]
+    # mountaincar_nr_actions = mountaincar_env.action_space.n
+    # mountaincar_qnet = QNet(
+    #     mountaincar_observation_space_size,
+    #     mountaincar_nr_actions,
+    #     hidden_size,
+    #     n_layers,
+    # )
+    # mountaincar_optimizer = torch.optim.RMSprop(mountaincar_qnet.parameters(), lr=1e-2)
+
+    # mountaincar_qnet = MC_func_approx(
+    #     mountaincar_env,
+    #     mountaincar_qnet,
+    #     mountaincar_optimizer,
+    #     epsilon,
+    #     nr_episodes,
+    #     max_t,
+    #     gamma,
+    # )
+    # print(
+    #     "Mean episode reward from MC_func_approx on mountaincar policy: ",
+    #     evaluate_greedy_policy(mountaincar_env, mountaincar_qnet.act_greedy, 10, 4_000),
+    # )
+    # gym_video(
+    #     mountaincar_qnet.act_greedy,
+    #     mountaincar_env,
+    #     f"{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx-{mountaincar_env.spec.id}",
+    #     4_000,
+    # )
+
+    # Cartpole MC
     # # Define the search space for hyperparameters
     # space = {
     #     "epsilon": hp.uniform("epsilon", 0, 1),
@@ -418,9 +512,46 @@ if __name__ == "__main__":
 
     # {'epsilon': 0.7213226283289884, 'hidden_size': 5, 'n_layers': 1}
 
-    # qnet = QNet(4, 2, 8)
-    ##optimizer = torch.optim.SGD(qnet.parameters(), lr=1e-2)
+    # # Mountain car MC
+    # # Define the search space for hyperparameters
+    # space = {
+    #     "epsilon": hp.uniform("epsilon", 0, 1),
+    #     "max_t": hp.choice("max_t", [1_000, 2_000, 4_000, 8_000, 16_000]),
+    # }
+
+    # # Run hyperparameter optimization
+    # best_params = fmin(
+    #     fn=run_mountain_car,
+    #     space=space,
+    #     algo=tpe.suggest,
+    #     max_evals=20,
+    # )
+
+    # # # Print the best hyperparameters
+    # print("Best hyperparameters:", best_params)
+
+    cartpole_env = gym.make("CartPole-v1", render_mode="rgb_array")
+    cartpole_observation_space_size = cartpole_env.observation_space.shape[0]
+    cartpole_nr_actions = cartpole_env.action_space.n
+    # cartpole_qnet = QNet(
+    #     cartpole_observation_space_size, cartpole_nr_actions, hidden_size, n_layers
+    # )
+
+    qnet = QNet(4, 2, 8)
+
+    # optimizer = torch.optim.SGD(qnet.parameters(), lr=1e-2)
     # optimizer = torch.optim.RMSprop(qnet.parameters(), lr=0.01)
-    # DQN(qnet, env, optimizer, gamma=0.99, epsilon=0.05, nr_episodes=10000, max_t=500,
-    # warm_start_steps=500, sync_rate=128, replay_buffer_size=5000, train_frequency=8)
-    # show_video_of_model(qnet, env, 'cartpole-DQN', 1000)
+    # MC_cartpole_policy = DQN(
+    #     qnet,
+    #     cartpole_env,
+    #     optimizer,
+    #     gamma=0.99,
+    #     epsilon=0.05,
+    #     nr_episodes=10,
+    #     max_t=500,
+    #     warm_start_steps=500,
+    #     sync_rate=128,
+    #     replay_buffer_size=5000,
+    #     train_frequency=8,
+    # ).act_greedy
+    # gym_video(MC_cartpole_policy, cartpole_env, "cartpole-DQN", 1000)
