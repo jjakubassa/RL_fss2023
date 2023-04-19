@@ -210,7 +210,7 @@ def MC_func_approx(
     # Save the model
     torch.save(
         qnet.state_dict(),
-        f"{OUTPUT_PATH}/{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx_model.pth",
+        f"{OUTPUT_PATH}/{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx_model-{env.spec.id}.pth",
     )
     return qnet
 
@@ -289,7 +289,7 @@ def DQN(
     state = env.reset()[0]
     for i in range(warm_start_steps):
         # your code here: populate the buffer with warm_start_steps experiences #
-        action = random.randint(0, env.action_space.n)
+        action = random.randint(0, env.action_space.n - 1)
         observation, reward, terminated, truncated, info = env.step(action)
         buffer.append(RB_Experience(state, action, reward, terminated, observation))
         state = observation
@@ -350,17 +350,22 @@ def DQN(
 
             episode_lengths.append(t + 1)
             episode_returns.append(episode_return)
+            if e % 10 == 0:
+                avg_return = np.mean(episode_returns[-10:])
+                avg_length = np.mean(episode_lengths[-10:])
 
-            tepisodes.set_postfix(
-                {
-                    f"mean episode reward {np.mean(episode_returns[-25:]):3.2f}",
-                    f"mean episode length {np.mean(episode_lengths[-25:]):3.2f}",
-                    (
-                        "nr terminal states in batch"
-                        f" {np.mean(nr_terminal_states[-25:]):3.2f}"
-                    ),
-                }
-            )
+                tepisodes.set_postfix(
+                    {
+                        "episode return": f"{avg_return:3.2f}",
+                        "episode length": f"{avg_length:3.2f}",
+                    }
+                )
+
+    # Save the model
+    torch.save(
+        qnet.state_dict(),
+        f"{OUTPUT_PATH}/{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-DQN-{env.spec.id}.pth",
+    )
     return target_qnet
 
 
@@ -563,8 +568,8 @@ if __name__ == "__main__":
         mountaincar_optimizer,
         epsilon=0.05,
         gamma=0.99,
-        nr_episodes=10,
-        max_t=500,
+        nr_episodes=400,
+        max_t=4000,
         warm_start_steps=500,
         sync_rate=128,
         replay_buffer_size=5000,
@@ -573,4 +578,11 @@ if __name__ == "__main__":
     print(
         "Mean episode reward from MC_func_approx on mountaincar policy: ",
         evaluate_greedy_policy(mountaincar_env, mountaincar_qnet.act_greedy, 10, 4_000),
+    )
+
+    gym_video(
+        mountaincar_qnet.act_greedy,
+        mountaincar_env,
+        f"{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx-{mountaincar_env.spec.id}",
+        5000,
     )
