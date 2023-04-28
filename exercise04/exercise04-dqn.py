@@ -3,7 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 import torchvision
 import numpy as np
-import gym
+import gymnasium as gym
 from stable_baselines3.common.atari_wrappers import (
     ClipRewardEnv,
     EpisodicLifeEnv,
@@ -22,17 +22,10 @@ from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
 import ale_py
 from ale_py import ALEInterface
+import datetime
+import caffeine
 
 ale = ALEInterface()
-
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-elif torch.backends.mps.is_available():
-    device = torch.device("mps")
-else:
-    device = torch.device("cpu")
-
-print("Using device:", device)
 
 # In this exercise we will use deep Q-learning to train an agent to play the Atari game of breakout.
 # We will use some ideas from the Rainbow DQN paper to improve upon the original DQN paper from Mnih.
@@ -58,42 +51,6 @@ def get_epsilon_action(qnet, state, epsilon, nr_actions):
         qvals = qnet.forward(state)
         action = torch.argmax(qvals).item()
     return action
-
-
-def save_gif(frames, filename):
-    for i in range(len(frames)):
-        frames[i] = Image.fromarray(frames[i][0])
-    frame_one = frames[0]
-    frame_one.save(
-        filename + ".gif",
-        format="GIF",
-        append_images=frames,
-        save_all=True,
-        duration=len(frames),
-        loop=0,
-        fps=3,
-    )
-
-
-def gym_video(policy, env, filename, nr_steps=1000):
-    env.reset()
-    state, _, done, _ = env.step(
-        env.action_space.sample()
-    )  # performs random actions to start
-    frames = []
-
-    for i in range(nr_steps):
-        frames.append(state)
-
-        # env.render()
-        action = get_epsilon_action(policy, transform(state), 0.0, env.action_space.n)
-        next_state, _, done, _ = env.step(action)
-
-        if done:
-            break
-        state = next_state
-
-    save_gif(frames, filename)
 
 
 # Named tuple for storing experience steps gathered in training
@@ -133,15 +90,15 @@ class ReplayBuffer:
             np.array(states),
             np.array(actions),
             np.array(rewards, dtype=np.float32),
-            np.array(dones, dtype=np.bool),
+            np.array(dones, dtype=bool),
             np.array(next_states),
         )
 
 
 def reset(env):
-    env.reset()
-    state, _, done, _ = env.step(env.action_space.sample())
-    if done:
+    env.reset(seed=seed)
+    state, _, done, truncated, _ = env.step(env.action_space.sample())
+    if done or truncated:
         return reset(env)
     return np.array(state)
 
@@ -182,8 +139,8 @@ def DQN(
     episode_lengths = []
     nr_terminal_states = []
 
-    run_name = f"breakout__{int(time.time())}"
-    writer = SummaryWriter(f"runs/{run_name}")
+    run_name = f"breakout__{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    writer = SummaryWriter(f"exercise04/runs/{run_name}")
     writer.add_text(
         "hyperparameters",
         f"|start_epsilon|{start_epsilon}||end_epsilon|{end_epsilon}||gamma|{gamma}||replay_buffer_size|{replay_buffer_size}||batch_size|{batch_size}|train_frequency|{train_frequency}||sync_rate|{sync_rate}",
@@ -195,11 +152,11 @@ def DQN(
     state = reset(env)
     for i in range(warm_start_steps):
         action = random.randrange(nr_actions)
-        new_state, reward, done, _ = env.step(action)
-        exp = Experience(state, action, reward, done, new_state)
+        new_state, reward, done, truncated, _ = env.step(action)
+        exp = Experience(state, action, reward, done or truncated, new_state)
         buffer.append(exp)
         state = new_state
-        if done:
+        if done or truncated:
             state = reset(env)
         if i % 10 == 0:
             state = reset(env)
@@ -223,7 +180,7 @@ def DQN(
                         qnet, transform(state), epsilon, nr_actions
                     )
 
-                new_state, reward, done, _ = env.step(action)
+                new_state, reward, done, truncated, _ = env.step(action)
                 buffer.append(
                     Experience(np.array(state), action, reward, done, new_state)
                 )
@@ -273,14 +230,165 @@ def DQN(
                 if step_counter % sync_rate == 0:
                     target_qnet.load_state_dict(qnet.state_dict())
 
-                if done:
+                if done or truncated:
                     break
 
             episode_lengths.append(t + 1)
             episode_returns.append(episode_return)
 
-            if e % 200 == 0:
-                gym_video(qnet, env, filename=f"dqn_breakout_{e}", nr_steps=1000)
+            writer.add_scalar(
+                "charts/episodic_return", episode_returns[-1], step_counter
+            )
+            writer.add_scalar(
+                "charts/episodic_length", episode_lengths[-1], step_counter
+            )
+            writer.add_scalar("charts/epsilon", epsilon, step_counter)
+
+            tepisodes.set_postfix(
+                {
+                    "mean episode return": "{:3.2f}".format(
+                        np.mean(episode_returns[-25:])
+                    ),
+                    "mean episode length": "{:3.2f}".format(
+                        np.mean(episode_lengths[-25:])
+                    ),
+                    "nr terminal states in batch": "{:3.2f}".format(
+                        np.mean(nr_terminal_states[-25:])
+                    ),
+                    "global step": step_counter,
+                }
+            )
+    env.close()
+    writer.close()
+
+
+def DDQN(
+    qnet,
+    env,
+    optimizer,
+    start_epsilon=1,
+    end_epsilon=0.05,
+    exploration_fraction=0.1,
+    gamma=1.0,
+    nr_episodes=5000,
+    max_t=100,
+    replay_buffer_size=1000000,
+    batch_size=32,
+    warm_start_steps=1000,
+    sync_rate=1024,
+    train_frequency=8,
+):
+    print(
+        f"Train policy with DQN for {nr_episodes} episodes using at most {max_t} steps,"
+        f" gamma = {gamma}, start epsilon = {start_epsilon}, end epsilon ="
+        f" {end_epsilon}, exploration fraction = {exploration_fraction}, replay buffer"
+        f" size = {replay_buffer_size}, sync rate = {sync_rate}, warm starting steps"
+        f" for filling the replay buffer = {warm_start_steps}"
+    )
+
+    target_qnet = copy.deepcopy(qnet)
+    buffer = ReplayBuffer(replay_buffer_size)
+    nr_actions = env.action_space.n
+    episode_returns = []
+    episode_lengths = []
+    nr_terminal_states = []
+
+    run_name = f"breakout__{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    writer = SummaryWriter(f"exercise04/runs/{run_name}")
+    writer.add_text(
+        "hyperparameters",
+        f"|start_epsilon|{start_epsilon}||end_epsilon|{end_epsilon}||gamma|{gamma}||replay_buffer_size|{replay_buffer_size}||batch_size|{batch_size}|train_frequency|{train_frequency}||sync_rate|{sync_rate}",
+    )
+
+    start_time = time.time()
+
+    # populate buffer
+    state = reset(env)
+    for i in range(warm_start_steps):
+        action = random.randrange(nr_actions)
+        new_state, reward, done, truncated, _ = env.step(action)
+        exp = Experience(state, action, reward, done or truncated, new_state)
+        buffer.append(exp)
+        state = new_state
+        if done or truncated:
+            state = reset(env)
+        if i % 10 == 0:
+            state = reset(env)
+
+    step_counter = 0
+    with tqdm.trange(nr_episodes, desc="DDQN Training", unit="episodes") as tepisodes:
+        for e in tepisodes:
+            state = reset(env)
+            episode_return = 0.0
+            epsilon = linear_schedule(
+                start_epsilon, end_epsilon, exploration_fraction * nr_episodes, e
+            )
+
+            # Collect trajectory
+            for t in range(max_t):
+                step_counter = step_counter + 1
+
+                # step through environment with agent
+                with torch.no_grad():
+                    action = get_epsilon_action(
+                        qnet, transform(state), epsilon, nr_actions
+                    )
+
+                new_state, reward, done, truncated, _ = env.step(action)
+                buffer.append(
+                    Experience(np.array(state), action, reward, done, new_state)
+                )
+                state = new_state
+                episode_return += (gamma**t) * reward
+
+                # calculate training loss on sampled batch
+                if step_counter % train_frequency == 0:
+                    states, actions, rewards, dones, next_states = buffer.sample(
+                        batch_size
+                    )
+
+                    qvalues = qnet.forward(transform(states))
+                    qvalues = torch.gather(
+                        qvalues.squeeze(0),
+                        1,
+                        torch.from_numpy(actions).to(device).unsqueeze(-1),
+                    ).squeeze(1)
+
+                    with torch.no_grad():
+                        next_qvalues = target_qnet(transform(next_states))
+                        next_qvalues, _ = torch.max(next_qvalues.squeeze(0), dim=1)
+                        next_qvalues[dones] = 0.0
+                        next_qvalues = next_qvalues.detach()
+                        nr_terminal_states.append(dones.sum())
+
+                    expected_qvalues = gamma * next_qvalues + torch.Tensor(rewards).to(
+                        device
+                    )
+                    loss = nn.MSELoss()(qvalues, expected_qvalues)
+
+                    writer.add_scalar("losses/td_loss", loss, step_counter)
+                    writer.add_scalar(
+                        "losses/q_values", qvalues.mean().item(), step_counter
+                    )
+                    writer.add_scalar(
+                        "charts/SPS",
+                        int(step_counter / (time.time() - start_time)),
+                        step_counter,
+                    )
+
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
+                # Soft update of target network
+                if step_counter % sync_rate == 0:
+                    target_qnet.load_state_dict(qnet.state_dict())
+
+                if done or truncated:
+                    break
+
+            episode_lengths.append(t + 1)
+            episode_returns.append(episode_return)
 
             writer.add_scalar(
                 "charts/episodic_return", episode_returns[-1], step_counter
@@ -338,7 +446,7 @@ class Model(nn.Module):
         return x
 
 
-def make_env():
+def make_env(seed):
     env = gym.make("BreakoutNoFrameskip-v4", render_mode="rgb_array")
     # env = gym.wrappers.RecordEpisodeStatistics(env)
     # env = gym.wrappers.RecordVideo(env, 'video', episode_trigger = lambda x: x % 2 == 0)
@@ -351,9 +459,17 @@ def make_env():
     env = gym.wrappers.ResizeObservation(env, (84, 84))
     env = gym.wrappers.GrayScaleObservation(env)
     env = gym.wrappers.FrameStack(env, 4)
-    # env.seed(seed)
-    # env.action_space.seed(seed)
-    # env.observation_space.seed(seed)
+    env = gym.wrappers.RecordVideo(
+        env,
+        "exercise04/videos/",
+        episode_trigger=lambda episode: episode % 200 == 0,
+        disable_logger=True,
+    )
+
+    if seed:
+        env.seed(seed)
+        env.action_space.seed(seed)
+        env.observation_space.seed(seed)
     return env
 
 
@@ -361,35 +477,44 @@ if __name__ == "__main__":
     print("gym:", gym.__version__)
     print("ale_py:", ale_py.__version__)
 
-    env = make_env()
+    # Check if CUDA or MPS is available
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+    print("Using device:", device)
+
+    # Prepare environment and model
+    seed = 42
+    env = make_env(seed)
+    model = Model(env.action_space.n).to(device)
     env.reset()
     env.step(0)
-    env.render(mode="rgb_array")
+    env.render()
 
-    start_epsilon = 0.4
-    end_epsilon = 0.01
-    exploration_fraction = 0.1
-    nr_episodes = 20000
-    max_t = 4000
-    gamma = 0.99
-    replay_buffer_size = 100000  # 1M is the DQN paper default
+    # Set Hyperparameters into dict
+    hyperparameters = {
+        "start_epsilon": 0.4,
+        "end_epsilon": 0.01,
+        "exploration_fraction": 0.4,
+        "nr_episodes": 5_000,
+        "max_t": 100_000,
+        "gamma": 0.99,
+        "replay_buffer_size": 200_000,  # 1M is the DQN paper default
+        "warm_start_steps": 500,
+        "sync_rate": 128,
+        "train_frequency": 2,
+    }
 
-    model = Model(env.action_space.n).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0000625, eps=1.5e-4)
-    # optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=1e-5 , eps=1.5e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=1e-2)
-    DQN(
-        model,
-        env,
-        optimizer,
-        gamma=gamma,
-        start_epsilon=start_epsilon,
-        end_epsilon=end_epsilon,
-        exploration_fraction=exploration_fraction,
-        nr_episodes=nr_episodes,
-        max_t=max_t,
-        warm_start_steps=500,
-        sync_rate=128,
-        replay_buffer_size=replay_buffer_size,
-        train_frequency=2,
-    )
+
+DQN(
+    model,
+    env,
+    optimizer,
+    **hyperparameters,
+)
