@@ -24,6 +24,7 @@ import ale_py
 from ale_py import ALEInterface
 import datetime
 import caffeine
+from collections import deque
 
 ale = ALEInterface()
 
@@ -67,9 +68,9 @@ class ReplayBuffer:
     """
 
     def __init__(self, capacity: int) -> None:
-        self.buffer = collections.deque(maxlen=capacity)
+        self.buffer: deque[Experience | None] = deque(maxlen=capacity)
 
-    def __len__(self) -> None:
+    def __len__(self) -> int:
         return len(self.buffer)
 
     def append(self, experience: Experience) -> None:
@@ -95,6 +96,69 @@ class ReplayBuffer:
         )
 
 
+# make replay buffer for n-step learning
+class NStepReplayBuffer:
+    def __init__(self, capacity: int, n: int, gamma: float) -> None:
+        self.buffer: deque[Experience | None] = deque(maxlen=capacity)
+        self.n = n
+        self.gamma = gamma
+
+    def __len__(self) -> int:
+        return len(self.buffer)
+
+    def append(self, experience: Experience) -> None:
+        """
+        Add experience to the buffer
+        Args:
+            experience: tuple (state, action, reward, done, new_state)
+        """
+        self.buffer.append(experience)
+
+    def sample(self, batch_size: int) -> Tuple:
+        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
+        states, actions, rewards, dones, next_states = zip(
+            *[self.buffer[idx] for idx in indices]
+        )
+
+        return (
+            np.array(states),
+            np.array(actions),
+            np.array(rewards, dtype=np.float32),
+            np.array(dones, dtype=bool),
+            np.array(next_states),
+        )
+
+    def sample_n_step(self, batch_size: int) -> Tuple:
+        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
+        states, actions, rewards, dones, next_states = zip(
+            *[self.buffer[idx] for idx in indices]
+        )
+
+        states = np.array(states)
+        actions = np.array(actions)
+        rewards = np.array(rewards, dtype=np.float32)
+        dones = np.array(dones, dtype=bool)
+        next_states = np.array(next_states)
+
+        n_step_rewards = []
+        for i in range(len(rewards)):
+            n_step_reward = 0
+            for j in range(self.n):
+                # What happens if we reach the end of the episode?
+                if i + j >= len(rewards) or dones[i + j]:
+                    break
+                n_step_reward += self.gamma**j * rewards[i + j]
+            n_step_rewards.append(n_step_reward)
+
+        return (
+            states,
+            actions,
+            np.array(n_step_rewards, dtype=np.float32),
+            dones,
+            next_states,
+        )
+
+
 def reset(env):
     env.reset(seed=seed)
     state, _, done, truncated, _ = env.step(env.action_space.sample())
@@ -112,6 +176,8 @@ def DQN(
     qnet,
     env,
     optimizer,
+    double_dqn=True,
+    n_steps: int = 1,
     start_epsilon=1,
     end_epsilon=0.05,
     exploration_fraction=0.1,
@@ -133,17 +199,18 @@ def DQN(
     )
 
     target_qnet = copy.deepcopy(qnet)
-    buffer = ReplayBuffer(replay_buffer_size)
+    buffer = NStepReplayBuffer(replay_buffer_size, n_steps, gamma)
     nr_actions = env.action_space.n
     episode_returns = []
     episode_lengths = []
     nr_terminal_states = []
 
-    run_name = f"breakout__{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_name = f"breakout__{now_str}_{'D' if double_dqn else ''}DQN_{n_steps}_steps"
     writer = SummaryWriter(f"exercise04/runs/{run_name}")
     writer.add_text(
         "hyperparameters",
-        f"|start_epsilon|{start_epsilon}||end_epsilon|{end_epsilon}||gamma|{gamma}||replay_buffer_size|{replay_buffer_size}||batch_size|{batch_size}|train_frequency|{train_frequency}||sync_rate|{sync_rate}",
+        f"|start_epsilon|{start_epsilon}||end_epsilon|{end_epsilon}||gamma|{gamma}||replay_buffer_size|{replay_buffer_size}||batch_size|{batch_size}|train_frequency|{train_frequency}||sync_rate|{sync_rate}|n_steps|{n_steps}|",
     )
 
     start_time = time.time()
@@ -189,9 +256,14 @@ def DQN(
 
                 # calculate training loss on sampled batch
                 if step_counter % train_frequency == 0:
-                    states, actions, rewards, dones, next_states = buffer.sample(
-                        batch_size
-                    )
+                    if n_steps > 1:
+                        states, actions, rewards, dones, next_states = (
+                            buffer.sample_n_step(batch_size)
+                        )
+                    else:
+                        states, actions, rewards, dones, next_states = buffer.sample(
+                            batch_size
+                        )
 
                     qvalues = qnet.forward(transform(states))
                     qvalues = torch.gather(
@@ -201,170 +273,72 @@ def DQN(
                     ).squeeze(1)
 
                     with torch.no_grad():
-                        next_qvalues = target_qnet(transform(next_states))
-                        next_qvalues, _ = torch.max(next_qvalues.squeeze(0), dim=1)
-                        next_qvalues[dones] = 0.0
-                        next_qvalues = next_qvalues.detach()
-                        nr_terminal_states.append(dones.sum())
+                        if double_dqn:
+                            # Compute the next Q-values using the target network
+                            next_qvalues = target_qnet(transform(next_states)).squeeze(
+                                0
+                            )
+
+                            # Decouple action selection from value estimation
+                            # Compute q-values for the next observation using the online q net
+                            next_q_values_online = qnet(transform(next_states)).squeeze(
+                                0
+                            )
+
+                            # Select action with online network
+                            next_actions_online = torch.argmax(
+                                next_q_values_online, dim=1
+                            )
+
+                            # Estimate the q-values for the selected actions using target q network
+                            next_qvalues = (
+                                torch.gather(
+                                    next_qvalues, 1, next_actions_online.unsqueeze(-1)
+                                )
+                                .squeeze(1)
+                                .detach()
+                            )
+
+                            # If terminal state, set q-value to 0
+                            next_qvalues[dones] = 0.0
+
+                            # # Compute Q-values for current states
+                            # qvalues = qnet(states).gather(1, actions)
+
+                            # # Compute Q-values for next state-actions pairs using the target network
+                            # next_qvalues = target_qnet(transform(next_states)).detach()
+                            # next_qvalues = next_qvalues.gather(
+                            #     1,
+                            #     torch.argmax(qnet(transform(next_states)), dim=1)[
+                            #         1
+                            #     ].unsqueeze(-1),
+                            # ).squeeze(1)
+                            # next_qvalues[dones] = 0.0
+
+                            # next_qvalues = qnet(transform(states)).squeeze(0)
+                            # next_qvalues = (
+                            #     torch.gather(
+                            #         next_qvalues,
+                            #         1,
+                            #         torch.argmax(next_qvalues, dim=1).unsqueeze(-1),
+                            #     )
+                            #     .squeeze(1)
+                            #     .detach()
+                            # )
+                            # next_qvalues[dones] = 0.0
+                            # # next_qvalues = next_qvalues.detach()
+                            # nr_terminal_states.append(dones.sum())
+                        else:
+                            next_qvalues = target_qnet(transform(next_states))
+                            next_qvalues, _ = torch.max(next_qvalues.squeeze(0), dim=1)
+                            next_qvalues[dones] = 0.0
+                            next_qvalues = next_qvalues.detach()
+                            nr_terminal_states.append(dones.sum())
 
                     expected_qvalues = gamma * next_qvalues + torch.Tensor(rewards).to(
                         device
                     )
-                    loss = nn.MSELoss()(qvalues, expected_qvalues)
-
-                    writer.add_scalar("losses/td_loss", loss, step_counter)
-                    writer.add_scalar(
-                        "losses/q_values", qvalues.mean().item(), step_counter
-                    )
-                    writer.add_scalar(
-                        "charts/SPS",
-                        int(step_counter / (time.time() - start_time)),
-                        step_counter,
-                    )
-
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
-
-                # Soft update of target network
-                if step_counter % sync_rate == 0:
-                    target_qnet.load_state_dict(qnet.state_dict())
-
-                if done or truncated:
-                    break
-
-            episode_lengths.append(t + 1)
-            episode_returns.append(episode_return)
-
-            writer.add_scalar(
-                "charts/episodic_return", episode_returns[-1], step_counter
-            )
-            writer.add_scalar(
-                "charts/episodic_length", episode_lengths[-1], step_counter
-            )
-            writer.add_scalar("charts/epsilon", epsilon, step_counter)
-
-            tepisodes.set_postfix(
-                {
-                    "mean episode return": "{:3.2f}".format(
-                        np.mean(episode_returns[-25:])
-                    ),
-                    "mean episode length": "{:3.2f}".format(
-                        np.mean(episode_lengths[-25:])
-                    ),
-                    "nr terminal states in batch": "{:3.2f}".format(
-                        np.mean(nr_terminal_states[-25:])
-                    ),
-                    "global step": step_counter,
-                }
-            )
-    env.close()
-    writer.close()
-
-
-def DDQN(
-    qnet,
-    env,
-    optimizer,
-    start_epsilon=1,
-    end_epsilon=0.05,
-    exploration_fraction=0.1,
-    gamma=1.0,
-    nr_episodes=5000,
-    max_t=100,
-    replay_buffer_size=1000000,
-    batch_size=32,
-    warm_start_steps=1000,
-    sync_rate=1024,
-    train_frequency=8,
-):
-    print(
-        f"Train policy with DQN for {nr_episodes} episodes using at most {max_t} steps,"
-        f" gamma = {gamma}, start epsilon = {start_epsilon}, end epsilon ="
-        f" {end_epsilon}, exploration fraction = {exploration_fraction}, replay buffer"
-        f" size = {replay_buffer_size}, sync rate = {sync_rate}, warm starting steps"
-        f" for filling the replay buffer = {warm_start_steps}"
-    )
-
-    target_qnet = copy.deepcopy(qnet)
-    buffer = ReplayBuffer(replay_buffer_size)
-    nr_actions = env.action_space.n
-    episode_returns = []
-    episode_lengths = []
-    nr_terminal_states = []
-
-    run_name = f"breakout__{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-    writer = SummaryWriter(f"exercise04/runs/{run_name}")
-    writer.add_text(
-        "hyperparameters",
-        f"|start_epsilon|{start_epsilon}||end_epsilon|{end_epsilon}||gamma|{gamma}||replay_buffer_size|{replay_buffer_size}||batch_size|{batch_size}|train_frequency|{train_frequency}||sync_rate|{sync_rate}",
-    )
-
-    start_time = time.time()
-
-    # populate buffer
-    state = reset(env)
-    for i in range(warm_start_steps):
-        action = random.randrange(nr_actions)
-        new_state, reward, done, truncated, _ = env.step(action)
-        exp = Experience(state, action, reward, done or truncated, new_state)
-        buffer.append(exp)
-        state = new_state
-        if done or truncated:
-            state = reset(env)
-        if i % 10 == 0:
-            state = reset(env)
-
-    step_counter = 0
-    with tqdm.trange(nr_episodes, desc="DDQN Training", unit="episodes") as tepisodes:
-        for e in tepisodes:
-            state = reset(env)
-            episode_return = 0.0
-            epsilon = linear_schedule(
-                start_epsilon, end_epsilon, exploration_fraction * nr_episodes, e
-            )
-
-            # Collect trajectory
-            for t in range(max_t):
-                step_counter = step_counter + 1
-
-                # step through environment with agent
-                with torch.no_grad():
-                    action = get_epsilon_action(
-                        qnet, transform(state), epsilon, nr_actions
-                    )
-
-                new_state, reward, done, truncated, _ = env.step(action)
-                buffer.append(
-                    Experience(np.array(state), action, reward, done, new_state)
-                )
-                state = new_state
-                episode_return += (gamma**t) * reward
-
-                # calculate training loss on sampled batch
-                if step_counter % train_frequency == 0:
-                    states, actions, rewards, dones, next_states = buffer.sample(
-                        batch_size
-                    )
-
-                    qvalues = qnet.forward(transform(states))
-                    qvalues = torch.gather(
-                        qvalues.squeeze(0),
-                        1,
-                        torch.from_numpy(actions).to(device).unsqueeze(-1),
-                    ).squeeze(1)
-
-                    with torch.no_grad():
-                        next_qvalues = target_qnet(transform(next_states))
-                        next_qvalues, _ = torch.max(next_qvalues.squeeze(0), dim=1)
-                        next_qvalues[dones] = 0.0
-                        next_qvalues = next_qvalues.detach()
-                        nr_terminal_states.append(dones.sum())
-
-                    expected_qvalues = gamma * next_qvalues + torch.Tensor(rewards).to(
-                        device
-                    )
-                    loss = nn.MSELoss()(qvalues, expected_qvalues)
+                    loss = nn.HuberLoss()(qvalues, expected_qvalues)
 
                     writer.add_scalar("losses/td_loss", loss, step_counter)
                     writer.add_scalar(
@@ -446,7 +420,7 @@ class Model(nn.Module):
         return x
 
 
-def make_env(seed):
+def make_env(seed: int | None):
     env = gym.make("BreakoutNoFrameskip-v4", render_mode="rgb_array")
     # env = gym.wrappers.RecordEpisodeStatistics(env)
     # env = gym.wrappers.RecordVideo(env, 'video', episode_trigger = lambda x: x % 2 == 0)
@@ -470,6 +444,8 @@ def make_env(seed):
         env.seed(seed)
         env.action_space.seed(seed)
         env.observation_space.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
     return env
 
 
@@ -498,13 +474,13 @@ if __name__ == "__main__":
     hyperparameters = {
         "start_epsilon": 0.4,
         "end_epsilon": 0.01,
-        "exploration_fraction": 0.4,
-        "nr_episodes": 5_000,
-        "max_t": 100_000,
+        "exploration_fraction": 0.01,
+        "nr_episodes": 15_000,
+        "max_t": 4000,
         "gamma": 0.99,
-        "replay_buffer_size": 200_000,  # 1M is the DQN paper default
+        "replay_buffer_size": 100_000,  # 1M is the DQN paper default
         "warm_start_steps": 500,
-        "sync_rate": 128,
+        "sync_rate": 1024,
         "train_frequency": 2,
     }
 
@@ -512,9 +488,14 @@ if __name__ == "__main__":
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=1e-2)
 
-DQN(
-    model,
-    env,
-    optimizer,
-    **hyperparameters,
-)
+    DQN(
+        model,
+        env,
+        optimizer,
+        double_dqn=True,
+        n_steps=5,
+        **hyperparameters,
+    )
+
+    # Save model
+    torch.save(model.state_dict(), "exercise04/model.pt")
