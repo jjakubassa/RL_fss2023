@@ -1,3 +1,4 @@
+from sympy import N
 import torch
 from torch import dtype, nn
 import torch.nn.functional as F
@@ -143,7 +144,7 @@ class NStepReplayBuffer:
         n_step_rewards = []
         for i in indices:
             n_step_reward = 0
-            for j in range(self.n+1):
+            for j in range(self.n + 1):
                 if i + j >= len(self.buffer) or self.buffer[i + j].done:
                     break
                 n_step_reward += self.gamma**j * self.buffer[i + j].reward
@@ -301,7 +302,7 @@ def DQN(
                             )
 
                             # If terminal state, set q-value to 0
-                            # next_qvalues[dones] = 0.0
+                            # next_qvalues[dones] = 0.0 # makes some issue with mps, which would result in CPU use
                             next_qvalues *= 1 - torch.from_numpy(
                                 dones.astype(np.float32)
                             ).to(device)
@@ -342,9 +343,9 @@ def DQN(
                             next_qvalues = next_qvalues.detach()
                             nr_terminal_states.append(dones.sum())
 
-                    expected_qvalues = gamma * next_qvalues + torch.Tensor(rewards).to(
-                        device
-                    )
+                    expected_qvalues = gamma**n_steps * next_qvalues + torch.Tensor(
+                        rewards
+                    ).to(device)
                     loss = nn.HuberLoss()(qvalues, expected_qvalues)
 
                     writer.add_scalar("losses/td_loss", loss, step_counter)
@@ -531,6 +532,7 @@ if __name__ == "__main__":
         model = DuelingModel(env.action_space.n).to(device)
     else:
         model = Model(env.action_space.n).to(device)
+
     env.reset()
     env.step(0)
     env.render()
