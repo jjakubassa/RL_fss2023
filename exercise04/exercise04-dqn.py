@@ -1,5 +1,5 @@
 import torch
-from torch import nn
+from torch import dtype, nn
 import torch.nn.functional as F
 import torchvision
 import numpy as np
@@ -141,13 +141,12 @@ class NStepReplayBuffer:
         next_states = np.array(next_states)
 
         n_step_rewards = []
-        for i in range(len(rewards)):
+        for i in indices:
             n_step_reward = 0
-            for j in range(self.n):
-                # What happens if we reach the end of the episode?
-                if i + j >= len(rewards) or dones[i + j]:
+            for j in range(self.n+1):
+                if i + j >= len(self.buffer) or self.buffer[i + j].done:
                     break
-                n_step_reward += self.gamma**j * rewards[i + j]
+                n_step_reward += self.gamma**j * self.buffer[i + j].reward
             n_step_rewards.append(n_step_reward)
 
         return (
@@ -206,7 +205,9 @@ def DQN(
     nr_terminal_states = []
 
     now_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_name = f"breakout__{now_str}_{'D' if double_dqn else ''}DQN_{n_steps}_steps"
+    run_name = (
+        f"breakout__{now_str}_{'D' if double_dqn else ''}DQN_{n_steps}_steps_{qnet.__class__.__name__}"
+    )
     writer = SummaryWriter(f"exercise04/runs/{run_name}")
     writer.add_text(
         "hyperparameters",
@@ -300,7 +301,10 @@ def DQN(
                             )
 
                             # If terminal state, set q-value to 0
-                            next_qvalues[dones] = 0.0
+                            # next_qvalues[dones] = 0.0
+                            next_qvalues *= 1 - torch.from_numpy(
+                                dones.astype(np.float32)
+                            ).to(device)
 
                             # # Compute Q-values for current states
                             # qvalues = qnet(states).gather(1, actions)
@@ -331,7 +335,10 @@ def DQN(
                         else:
                             next_qvalues = target_qnet(transform(next_states))
                             next_qvalues, _ = torch.max(next_qvalues.squeeze(0), dim=1)
-                            next_qvalues[dones] = 0.0
+                            # next_qvalues[dones] = 0.0
+                            next_qvalues *= 1 - torch.from_numpy(
+                                dones.astype(np.float32)
+                            ).to(device)
                             next_qvalues = next_qvalues.detach()
                             nr_terminal_states.append(dones.sum())
 
@@ -420,6 +427,56 @@ class Model(nn.Module):
         return x
 
 
+class DuelingModel(nn.Module):
+    def __init__(self, nr_actions):
+        super(DuelingModel, self).__init__()
+        # define convolutional layers
+        self.conv1 = nn.Conv2d(4, 32, kernel_size=8, stride=4)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
+
+        # value stream
+        self.value_stream = nn.Linear(7 * 7 * 64, 512)
+        self.value_head = nn.Linear(512, 1)
+
+        # advantage stream
+        self.advantage_stream = nn.Linear(7 * 7 * 64, 512)
+        self.advantage_head = nn.Linear(512, nr_actions)
+
+        # initialize weights
+        torch.nn.init.kaiming_normal_(self.conv1.weight, nonlinearity="leaky_relu")
+        torch.nn.init.kaiming_normal_(self.conv2.weight, nonlinearity="leaky_relu")
+        torch.nn.init.kaiming_normal_(self.conv3.weight, nonlinearity="leaky_relu")
+        torch.nn.init.kaiming_normal_(
+            self.value_stream.weight, nonlinearity="leaky_relu"
+        )
+        torch.nn.init.kaiming_normal_(
+            self.advantage_stream.weight, nonlinearity="leaky_relu"
+        )
+        torch.nn.init.kaiming_normal_(self.value_head.weight, nonlinearity="linear")
+        torch.nn.init.kaiming_normal_(self.advantage_head.weight, nonlinearity="linear")
+
+    def forward(self, x):
+        # compute convolutional layers
+        x = F.leaky_relu(self.conv1(x), 0.01)
+        x = F.leaky_relu(self.conv2(x), 0.01)
+        x = F.leaky_relu(self.conv3(x), 0.01)
+
+        x = torch.flatten(x, -3, -1)
+
+        # compute value and advantage streams
+        value = F.leaky_relu(self.value_stream(x), 0.01)
+        value = self.value_head(value)
+
+        advantage = F.leaky_relu(self.advantage_stream(x), 0.01)
+        advantage = self.advantage_head(advantage)
+
+        # Compute Q-values from value and advantage estimates
+        q_values = value + (advantage - advantage.mean())
+
+        return q_values
+
+
 def make_env(seed: int | None):
     env = gym.make("BreakoutNoFrameskip-v4", render_mode="rgb_array")
     # env = gym.wrappers.RecordEpisodeStatistics(env)
@@ -450,6 +507,11 @@ def make_env(seed: int | None):
 
 
 if __name__ == "__main__":
+    # Turn on/off modifications
+    double_dqn = False
+    dueling_dqn = True
+    n_steps = 8  # change to 1 for regular DQN
+
     print("gym:", gym.__version__)
     print("ale_py:", ale_py.__version__)
 
@@ -465,7 +527,10 @@ if __name__ == "__main__":
     # Prepare environment and model
     seed = 42
     env = make_env(seed)
-    model = Model(env.action_space.n).to(device)
+    if dueling_dqn:
+        model = DuelingModel(env.action_space.n).to(device)
+    else:
+        model = Model(env.action_space.n).to(device)
     env.reset()
     env.step(0)
     env.render()
@@ -474,13 +539,13 @@ if __name__ == "__main__":
     hyperparameters = {
         "start_epsilon": 0.4,
         "end_epsilon": 0.01,
-        "exploration_fraction": 0.01,
+        "exploration_fraction": 0.1,
         "nr_episodes": 15_000,
         "max_t": 4000,
         "gamma": 0.99,
         "replay_buffer_size": 100_000,  # 1M is the DQN paper default
         "warm_start_steps": 500,
-        "sync_rate": 1024,
+        "sync_rate": 32,
         "train_frequency": 2,
     }
 
@@ -492,8 +557,8 @@ if __name__ == "__main__":
         model,
         env,
         optimizer,
-        double_dqn=True,
-        n_steps=5,
+        double_dqn=double_dqn,
+        n_steps=n_steps,
         **hyperparameters,
     )
 
