@@ -115,7 +115,7 @@ class NStepReplayBuffer:
         """
         self.buffer.append(experience)
 
-    def sample(self, batch_size: int) -> Tuple:
+    def sample(self, batch_size: int) -> tuple[np.ndarray]:
         indices = np.random.choice(len(self.buffer), batch_size, replace=False)
         states, actions, rewards, dones, next_states = zip(
             *[self.buffer[idx] for idx in indices]
@@ -142,12 +142,24 @@ class NStepReplayBuffer:
         next_states = np.array(next_states)
 
         n_step_rewards = []
-        for i in indices:
+        is_adjusted = False
+
+        for i_batch, i_buffer in enumerate(indices):
             n_step_reward = 0
             for j in range(self.n + 1):
-                if i + j >= len(self.buffer) or self.buffer[i + j].done:
+                # If we reach the end of the buffer or the episode ends, stop
+                if i_buffer + j >= len(self.buffer) or self.buffer[i_buffer + j].done:
+                    # Adjust next state and dones accordingly
+                    # What should we do if we reach the end of the buffer during training?
+                    is_adjusted = True
+                    next_states[i_batch] = self.buffer[i_buffer + j - 1].new_state
+                    dones[i_batch] = True
                     break
-                n_step_reward += self.gamma**j * self.buffer[i + j].reward
+                n_step_reward += self.gamma**j * self.buffer[i_buffer + j].reward
+            if not is_adjusted:
+                next_states[i_batch] = self.buffer[i_buffer + self.n].new_state
+                dones[i_batch] = self.buffer[i_buffer + self.n].done
+
             n_step_rewards.append(n_step_reward)
 
         return (
