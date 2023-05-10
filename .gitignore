@@ -3,3 +3,12 @@ gym-bandits
 .DS_Store
 *.gif
 *.png
+*.mp4
+*.json
+*.pth
+*MacBook-Air-von-Jonas.local.91874.0
+exercise04/runs/*
+*.pt
+*submission*
+*old
+*.wlan.uni-mannheim.de*

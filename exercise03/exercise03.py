@@ -16,25 +16,25 @@ import datetime
 from copy import deepcopy
 
 
-def gym_video(policy, env, filename, nr_steps=1000):
+def gym_video(policy, env, filename, nr_steps=1000, output_path="exercise03/output/"):
     """
     Writes a video of policy acting in the environment.
     """
     env = gym.wrappers.RecordVideo(
         env,
-        video_folder=OUTPUT_PATH,
+        video_folder=output_path,
         name_prefix=filename,
         disable_logger=True,
     )
 
-    for _ in range(3):
+    for _ in range(1):
         state = env.reset()[0]
         done = False
         for t in range(nr_steps):
             action = policy(state)
-            next_state, reward, done, _, _ = env.step(action)
+            next_state, reward, done, truncated, _ = env.step(action)
             state = next_state
-            if done:
+            if done or truncated:
                 break
     env.close()
 
@@ -71,7 +71,7 @@ def plot_training(e_returns, env, algo_name: str, n: int = 1000):
 
     # save plot
     plt.savefig(
-        f"{OUTPUT_PATH}/{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-{algo_name}-{env.spec.id}"
+        f"exercise03/output/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-{algo_name}-{env.spec.id}"
     )
 
 
@@ -136,6 +136,7 @@ def MC_func_approx(
     max_t: int = 1000,
     gamma: float = 0.99,
     hide_progress: bool = False,
+    output_path="exercise03/output/",
 ):
     """Monte Carlo control with function approximation."""
     SAR = namedtuple("SAR", ["state", "action", "reward"])
@@ -199,8 +200,8 @@ def MC_func_approx(
                 # avg_backtrack_percentage = np.mean(backtrack_percentages[-100:])
                 tepisodes.set_postfix(
                     {
-                        "episode return": f"{avg_return:.2f}",
-                        "episode length": f"{avg_length:3.2f}",
+                        "e return": f"{avg_return:.2f}",
+                        "e length": f"{avg_length:3.2f}",
                         # "greedy return": f"{greedy_return[-1]:.2f}",
                         # 'backtrack': "{:.2f}%".format(avg_backtrack_percentage)
                     }
@@ -211,7 +212,7 @@ def MC_func_approx(
     # Save the model
     torch.save(
         qnet.state_dict(),
-        f"{OUTPUT_PATH}/{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx_model-{env.spec.id}.pth",
+        f"{output_path}{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx_model-{env.spec.id}.pth",
     )
     return qnet
 
@@ -271,6 +272,7 @@ def DQN(
     warm_start_steps: int = 1000,
     sync_rate: int = 1024,
     train_frequency: int = 8,
+    output_path: str = "exercise03/output/",
 ):
     """Deep Q-Learning with experience replay and target network."""
     print(
@@ -282,6 +284,13 @@ def DQN(
 
     buffer = ReplayBuffer(replay_buffer_size)
     target_qnet = deepcopy(qnet)
+
+    # target should not be differentiated
+    for layer in target_qnet.linear_relu_stack.children():
+        if isinstance(layer, nn.Linear):
+            layer.weight.detach_()
+            layer.bias.detach_()
+    
     episode_returns = []
     episode_lengths = []
     nr_terminal_states: list = []
@@ -298,10 +307,10 @@ def DQN(
             env.reset()
 
     with tqdm.trange(nr_episodes, desc="DQN Training", unit="episodes") as tepisodes:
+        step_counter = 0
         for e in tepisodes:
             state = env.reset()[0]
             episode_return = 0.0
-            step_counter = 0
 
             # Collect trajectory
             for t in range(max_t):
@@ -357,15 +366,15 @@ def DQN(
 
                 tepisodes.set_postfix(
                     {
-                        "episode return": f"{avg_return:3.2f}",
-                        "episode length": f"{avg_length:3.2f}",
+                        "e return": f"{avg_return:3.2f}",
+                        "e length": f"{avg_length:3.2f}",
                     }
                 )
 
     # Save the model
     torch.save(
         qnet.state_dict(),
-        f"{OUTPUT_PATH}/{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-DQN-{env.spec.id}.pth",
+        f"{output_path}{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-DQN-{env.spec.id}.pth",
     )
     return target_qnet
 
@@ -396,9 +405,7 @@ def run_cartpole(params):
 def run_mountain_car(params):
     epsilon = params["epsilon"]
     max_t = params["max_t"]
-    mountaincar_env = gym.make(
-        "MountainCar-v0", render_mode="rgb_array", max_episode_steps=max_t
-    )
+    mountaincar_env = gym.make("MountainCar-v0", render_mode="rgb_array")
     mountaincar_observation_space_size = mountaincar_env.observation_space.shape[0]
     mountaincar_nr_actions = mountaincar_env.action_space.n
     mountaincar_qnet = QNet(
@@ -419,85 +426,81 @@ def run_mountain_car(params):
         gamma,
     )
 
-    return -1 * evaluate_greedy_policy(
+    return evaluate_greedy_policy(
         mountaincar_env, mountaincar_qnet.act_greedy, 10, 1000
     )
 
 
 if __name__ == "__main__":
-    # Get the current date and time
-    NOW = datetime.datetime.now()
-    OUTPUT_PATH = "exercise03/output/"
-
-    # epsilon = 0.7213226283289884
-    epsilon = 0.7
-    nr_episodes = 100
+    epsilon = 0.7213226283289884
+    nr_episodes = 1_000
     max_t = 4_000
     gamma = 0.999999
     replay_buffer_size = 10_000
     hidden_size = 5
     n_layers = 1
 
-    # cartpole_env = gym.make("CartPole-v1", render_mode="rgb_array")
-    # cartpole_observation_space_size = cartpole_env.observation_space.shape[0]
-    # cartpole_nr_actions = cartpole_env.action_space.n
-    # cartpole_qnet = QNet(
-    #     cartpole_observation_space_size, cartpole_nr_actions, hidden_size, n_layers
-    # )
+    cartpole_env = gym.make("CartPole-v1", render_mode="rgb_array")
+    cartpole_observation_space_size = cartpole_env.observation_space.shape[0]
+    cartpole_nr_actions = cartpole_env.action_space.n
+    cartpole_qnet = QNet(
+        cartpole_observation_space_size, cartpole_nr_actions, hidden_size, n_layers
+    )
     # cartpole_optimizer = torch.optim.SGD(cartpole_qnet.parameters(), lr=1e-3)
+    cartpole_optimizer = torch.optim.AdamW(cartpole_qnet.parameters(), lr=1e-2)
 
-    # cartpole_qnet = MC_func_approx(
-    #     cartpole_env,
-    #     cartpole_qnet,
-    #     cartpole_optimizer,
-    #     epsilon,
-    #     nr_episodes,
-    #     max_t,
-    #     gamma,
-    # )
-    # print(
-    #     "Mean episode reward from MC_func_approx on cartpole: ",
-    #     evaluate_greedy_policy(cartpole_env, cartpole_qnet.act_greedy),
-    # )
-    # gym_video(
-    #     cartpole_qnet.act_greedy,
-    #     cartpole_env,
-    #     f"{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx-{cartpole_env.spec.id}",
-    #     10_00_000,
-    # )
+    cartpole_qnet = MC_func_approx(
+        cartpole_env,
+        cartpole_qnet,
+        cartpole_optimizer,
+        epsilon,
+        nr_episodes,
+        max_t,
+        gamma,
+    )
+    print(
+        "Mean episode reward from MC_func_approx on cartpole: ",
+        evaluate_greedy_policy(cartpole_env, cartpole_qnet.act_greedy),
+    )
+    gym_video(
+        cartpole_qnet.act_greedy,
+        cartpole_env,
+        f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx-{cartpole_env.spec.id}",
+        5000,
+    )
 
-    # mountaincar_env = gym.make(
-    #     "MountainCar-v0", render_mode="rgb_array", max_episode_steps=max_t
-    # )
-    # mountaincar_observation_space_size = mountaincar_env.observation_space.shape[0]
-    # mountaincar_nr_actions = mountaincar_env.action_space.n
-    # mountaincar_qnet = QNet(
-    #     mountaincar_observation_space_size,
-    #     mountaincar_nr_actions,
-    #     hidden_size,
-    #     n_layers,
-    # )
-    # mountaincar_optimizer = torch.optim.RMSprop(mountaincar_qnet.parameters(), lr=1e-2)
+    mountaincar_env = gym.make(
+        "MountainCar-v0", render_mode="rgb_array", max_episode_steps=max_t
+    )
+    mountaincar_observation_space_size = mountaincar_env.observation_space.shape[0]
+    mountaincar_nr_actions = mountaincar_env.action_space.n
+    mountaincar_qnet = QNet(
+        mountaincar_observation_space_size,
+        mountaincar_nr_actions,
+        hidden_size,
+        n_layers,
+    )
+    mountaincar_optimizer = torch.optim.RMSprop(mountaincar_qnet.parameters(), lr=1e-2)
 
-    # mountaincar_qnet = MC_func_approx(
-    #     mountaincar_env,
-    #     mountaincar_qnet,
-    #     mountaincar_optimizer,
-    #     epsilon,
-    #     nr_episodes,
-    #     max_t,
-    #     gamma,
-    # )
-    # print(
-    #     "Mean episode reward from MC_func_approx on mountaincar policy: ",
-    #     evaluate_greedy_policy(mountaincar_env, mountaincar_qnet.act_greedy, 10, 4_000),
-    # )
-    # gym_video(
-    #     mountaincar_qnet.act_greedy,
-    #     mountaincar_env,
-    #     f"{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx-{mountaincar_env.spec.id}",
-    #     4_000,
-    # )
+    mountaincar_qnet = MC_func_approx(
+        mountaincar_env,
+        mountaincar_qnet,
+        mountaincar_optimizer,
+        epsilon,
+        nr_episodes,
+        max_t,
+        gamma,
+    )
+    print(
+        "Mean episode reward from MC_func_approx on mountaincar policy: ",
+        evaluate_greedy_policy(mountaincar_env, mountaincar_qnet.act_greedy, 10, 4_000),
+    )
+    gym_video(
+        mountaincar_qnet.act_greedy,
+        mountaincar_env,
+        f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx-{mountaincar_env.spec.id}",
+        4_000,
+    )
 
     # Cartpole MC
     # # Define the search space for hyperparameters
@@ -539,18 +542,6 @@ if __name__ == "__main__":
     # # # Print the best hyperparameters
     # print("Best hyperparameters:", best_params)
 
-    # cartpole_env = gym.make("CartPole-v1", render_mode="rgb_array")
-    # cartpole_observation_space_size = cartpole_env.observation_space.shape[0]
-    # cartpole_nr_actions = cartpole_env.action_space.n
-    # cartpole_qnet = QNet(
-    #     cartpole_observation_space_size, cartpole_nr_actions, hidden_size, n_layers
-    # )
-
-    # qnet = QNet(4, 2, 8)
-
-    # optimizer = torch.optim.SGD(qnet.parameters(), lr=1e-2)
-    # optimizer = torch.optim.RMSprop(qnet.parameters(), lr=0.01)
-
     cartpole_env = gym.make("CartPole-v1", render_mode="rgb_array")
     cartpole_observation_space_size = cartpole_env.observation_space.shape[0]
     cartpole_nr_actions = cartpole_env.action_space.n
@@ -563,10 +554,10 @@ if __name__ == "__main__":
         cartpole_qnet,
         cartpole_env,
         cartpole_optimizer,
-        epsilon=0.7,
+        epsilon=0.3,
         gamma=0.99,
-        nr_episodes=15_000,
-        max_t=4000,
+        nr_episodes=1_000,
+        max_t=1000,
         warm_start_steps=500,
         sync_rate=128,
         replay_buffer_size=1000,
@@ -581,7 +572,7 @@ if __name__ == "__main__":
     gym_video(
         cartpole_qnet.act_greedy,
         cartpole_env,
-        f"{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx-{cartpole_env.spec.id}",
+        f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-DQN-{cartpole_env.spec.id}",
         5000,
     )
 
@@ -619,6 +610,6 @@ if __name__ == "__main__":
     gym_video(
         mountaincar_qnet.act_greedy,
         mountaincar_env,
-        f"{NOW.strftime('%Y-%m-%d_%H-%M-%S')}-MC_func_approx-{mountaincar_env.spec.id}",
+        f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}-DQN-{mountaincar_env.spec.id}",
         5000,
     )

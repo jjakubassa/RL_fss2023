@@ -97,6 +97,11 @@ class ReplayBuffer:
         )
 
 
+# TODO: test this function
+def set_true_after_first_true(arr: np.ndarray):
+    return np.cumsum(arr) >= 1
+
+
 # make replay buffer for n-step learning
 class NStepReplayBuffer:
     def __init__(self, capacity: int, n: int, gamma: float) -> None:
@@ -115,7 +120,7 @@ class NStepReplayBuffer:
         """
         self.buffer.append(experience)
 
-    def sample(self, batch_size: int) -> tuple[np.ndarray]:
+    def sample(self, batch_size: int) -> Tuple:
         indices = np.random.choice(len(self.buffer), batch_size, replace=False)
         states, actions, rewards, dones, next_states = zip(
             *[self.buffer[idx] for idx in indices]
@@ -129,46 +134,134 @@ class NStepReplayBuffer:
             np.array(next_states),
         )
 
+    def get_reward_buffer_as_array(
+        self,
+    ):
+        return np.array(
+            [exp.reward for exp in self.buffer]
+        )  # TODO: think about buffer data structure
+
+    def get_index_matrix(self, batch_size: int, idx: np.ndarray) -> np.ndarray:
+        """Each row i corresponds to the i-th index and each column to step j.
+        Assumes that index + n is in range of buffer"""
+        return np.add(idx[:, np.newaxis], np.arange(self.n))
+
+    def get_done_matrix(self, batch_size: int, idx: np.ndarray) -> np.ndarray:
+        """Each row i corresponds to the i-th index and each column to step j.
+        Assumes that index + n is in range of buffer"""
+        idx_matrix = self.get_index_matrix(batch_size, idx)
+        done_matrix = np.array(
+            [self.buffer[i].done for i in idx_matrix.flatten()]
+        ).reshape((batch_size, self.n))
+
+        # If episodes is over, all subsequent steps should be done too
+        done_matrix = np.apply_along_axis(
+            set_true_after_first_true, axis=1, arr=done_matrix
+        )
+        return done_matrix
+
+    # TODO: test this function
+    def collect_reward_matrix(self, batch_size: int, idx: np.ndarray) -> np.ndarray:
+        """Each row i corresponds to the i-th index and each column to step j.
+        Assumes that index + n is in range of buffer"""
+        idx_matrix = self.get_index_matrix(batch_size, idx)
+        reward_matrix = np.array(
+            [self.buffer[i].reward for i in idx_matrix.flatten()]
+        ).reshape((batch_size, self.n))
+        return reward_matrix
+
     def sample_n_step(self, batch_size: int) -> Tuple:
-        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
+        indices = np.random.choice(
+            len(self.buffer) - self.n,  # - self.n to avoid end of buffer
+            batch_size,
+            replace=False,
+        )
+
         states, actions, rewards, dones, next_states = zip(
             *[self.buffer[idx] for idx in indices]
         )
 
         states = np.array(states)
         actions = np.array(actions)
-        rewards = np.array(rewards, dtype=np.float32)
-        dones = np.array(dones, dtype=bool)
+        rewards = np.array(rewards)
+        dones = np.array(dones)
         next_states = np.array(next_states)
 
-        n_step_rewards = []
-        is_adjusted = False
+        # Create a matrix of shape (batch_size, n) containing the discount factor
+        # raised to the power of 0 to n
+        discounts = np.power(self.gamma, np.arange(self.n))
 
-        for i_batch, i_buffer in enumerate(indices):
-            n_step_reward = 0
-            for j in range(self.n + 1):
-                # If we reach the end of the buffer or the episode ends, stop
-                if i_buffer + j >= len(self.buffer) or self.buffer[i_buffer + j].done:
-                    # Adjust next state and dones accordingly
-                    # What should we do if we reach the end of the buffer during training?
-                    is_adjusted = True
-                    next_states[i_batch] = self.buffer[i_buffer + j - 1].new_state
-                    dones[i_batch] = True
-                    break
-                n_step_reward += self.gamma**j * self.buffer[i_buffer + j].reward
-            if not is_adjusted:
-                next_states[i_batch] = self.buffer[i_buffer + self.n].new_state
-                dones[i_batch] = self.buffer[i_buffer + self.n].done
+        # Fill in rewards matrix
+        reward_matrix = self.collect_reward_matrix(batch_size, indices)
 
-            n_step_rewards.append(n_step_reward)
+        # Fill in dones matrix
+        done_matrix = self.get_done_matrix(batch_size, indices)
+
+        # Mask rewards with dones
+        reward_matrix = np.multiply(reward_matrix, done_matrix)
+
+        # Discount future rewards
+        reward_matrix = np.multiply(reward_matrix, discounts)
+
+        # Sum rewards
+        n_step_rewards = np.sum(reward_matrix, axis=1)
+
+        # Adjust dones
+        adjusted_dones = done_matrix[:, -1]
+
+        # Steps to final state
+        steps_to_final_state = np.sum(1 - done_matrix, axis=1)
+
+        # Adjust next_states
+        # next states will be wrong if done is reached,
+        # but q-values will set to 0 anyway
+        adjusted_next_states = [  # should it be new_state or state?
+            self.buffer[i + steps_to_final_state[j]].new_state
+            for j, i in enumerate(indices)
+        ]
 
         return (
-            states,
-            actions,
+            np.array(states),
+            np.array(actions),
             np.array(n_step_rewards, dtype=np.float32),
-            dones,
-            next_states,
+            np.array(adjusted_dones, dtype=bool),
+            np.array(adjusted_next_states),
         )
+
+        # Iterate over the batch
+        # for i_batch, i_buffer in enumerate(indices):
+        # # Adjust next_states and dones
+        # # If done is reached, then all next states are the same
+        # mask = np.cumsum(dones) >= 1
+        # dones_adjusted[~mask] = False
+
+        # dones = self.buffer[i_buffer + self.n].done
+        # next_states = self.buffer[i_buffer + self.n].new_state
+
+        # next_states = np.array(next_states)
+        # dones = np.array(dones)
+        # n_step_rewards = []
+        # is_adjusted = False
+        # for i_batch, i_buffer in enumerate(indices):
+        #     n_step_reward = 0
+        #     for j in range(self.n + 1):
+        #         # If we reach the end of the buffer or the episode ends, stop
+        #         if i_buffer + j >= len(self.buffer) or self.buffer[i_buffer + j].done:
+        #             is_adjusted = True
+        #             dones[i_batch] = True
+        #             break
+        #         n_step_reward += self.gamma**j * self.buffer[i_buffer + j].reward
+        #     if not is_adjusted:
+        #         next_states[i_batch] = self.buffer[i_buffer + self.n].new_state
+        #     n_step_rewards.append(n_step_reward)
+
+        # return (
+        #     np.array(states),
+        #     np.array(actions),
+        #     np.array(n_step_rewards, dtype=np.float32),
+        #     np.array(dones, dtype=bool),
+        #     np.array(next_states),
+        # )
 
 
 def reset(env):
@@ -523,7 +616,21 @@ if __name__ == "__main__":
     # Turn on/off modifications
     double_dqn = False
     dueling_dqn = True
-    n_steps = 8  # change to 1 for regular DQN
+    n_steps = 4  # change to 1 for regular DQN
+
+    # Set Hyperparameters into dict
+    hyperparameters = {
+        "start_epsilon": 0.4,
+        "end_epsilon": 0.01,
+        "exploration_fraction": 0.1,
+        "nr_episodes": 15_000,
+        "max_t": 4000,
+        "gamma": 0.999999,
+        "replay_buffer_size": 100_000,  # 1M is the DQN paper default
+        "warm_start_steps": 500,
+        "sync_rate": 32,
+        "train_frequency": 2,
+    }
 
     print("gym:", gym.__version__)
     print("ale_py:", ale_py.__version__)
@@ -542,29 +649,17 @@ if __name__ == "__main__":
     env = make_env(seed)
     if dueling_dqn:
         model = DuelingModel(env.action_space.n).to(device)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
     else:
         model = Model(env.action_space.n).to(device)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 
     env.reset()
     env.step(0)
     env.render()
 
-    # Set Hyperparameters into dict
-    hyperparameters = {
-        "start_epsilon": 0.4,
-        "end_epsilon": 0.01,
-        "exploration_fraction": 0.1,
-        "nr_episodes": 15_000,
-        "max_t": 4000,
-        "gamma": 0.99,
-        "replay_buffer_size": 100_000,  # 1M is the DQN paper default
-        "warm_start_steps": 500,
-        "sync_rate": 32,
-        "train_frequency": 2,
-    }
-
     # optimizer = torch.optim.Adam(model.parameters(), lr=1e-5 , eps=1.5e-4)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    # optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=1e-2)
 
     DQN(

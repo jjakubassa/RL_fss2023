@@ -91,12 +91,55 @@ class Agent(nn.Module):
         # - Use Tanh activation for all hidden layers
 
         # add critic: A fully connected NN with (n_states, 64) -> (64, 64) -> (64, 1), where n_states is the dimension of the observation space. 
-        self.critic = None
+        
+        # Input layer
+        layers = []
+        n_states = np.prod(env.observation_space.shape)
+        layers.append(nn.Linear(n_states, 64))
+        nn.init.constant_(layers[-1].bias, 0) 
+        nn.init.orthogonal_(layers[-1].weight)
+        layers.append(nn.Tanh()) # here too?
+
+        # Hidden layer(s)
+        layers.append(nn.Linear(64, 64))
+        nn.init.constant_(layers[-1].bias, 0)
+        nn.init.orthogonal_(layers[-1].weight)
+        layers.append(nn.Tanh())
+
+        # Output layer
+        layers.append(nn.Linear(64, 1))
+        nn.init.constant_(layers[-1].bias, 0)
+        nn.init.orthogonal_(layers[-1].weight)
+
+        # Save critic as a sequential model
+        self.critic = nn.Sequential(*layers)
 
         # The actor will be parametrized by a Gaussian probability distribution.
         # add actor mean: A fully connected NN with (n_states, 64) -> (64, 64) -> (64, n_actions), where n_actions is the dimensionality of the action space
-        self.actor_mean = None
+        
+        # Input layer
+        layers = []
+        n_states = np.prod(env.observation_space.shape)
+        layers.append(nn.Linear(n_states, 64))
+        nn.init.constant_(layers[-1].bias, 0) 
+        nn.init.orthogonal_(layers[-1].weight)
+        layers.append(nn.Tanh()) # here too?
 
+        # Hidden layer(s)
+        layers.append(nn.Linear(64, 64))
+        nn.init.constant_(layers[-1].bias, 0)
+        nn.init.orthogonal_(layers[-1].weight)
+        layers.append(nn.Tanh())
+
+        # Output layer
+        n_actions = np.prod(env.action_space.shape)
+        layers.append(nn.Linear(64, n_actions))
+        nn.init.constant_(layers[-1].bias, 0)
+        nn.init.orthogonal_(layers[-1].weight)
+
+        # Save actor as a sequential model
+        self.actor_mean = nn.Sequential(*layers)
+        
         #self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(env.action_space.shape)))
         # add actor variance. This is just a Parameter (a tensor whose values are learned) with n_actions elements. This will serve as a diagonal variance matrix for a Gaussian policy.
         self.actor_logstd = nn.Parameter(torch.zeros(np.prod(env.action_space.shape)))
