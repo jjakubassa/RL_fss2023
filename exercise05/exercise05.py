@@ -128,7 +128,7 @@ def make_env(env_id, capture_video, run_name, gamma):
             env,
             f"videos/{run_name}",
             episode_trigger=lambda episode_id: episode_id % 50 == 0
-            and episode_id > 4200,
+            and episode_id > 100,
         )
     env = gym.wrappers.ClipAction(env)
     env = gym.wrappers.NormalizeObservation(env)
@@ -232,7 +232,7 @@ class Agent(nn.Module):
 if __name__ == "__main__":
     args = parse_args()
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
-    writer = SummaryWriter(f"runs/{run_name}")
+    writer = SummaryWriter(f"runs/PPO/{run_name}")
     writer.add_text(
         "hyperparameters",
         "|param|value|\n|-|-|\n%s"
@@ -374,12 +374,20 @@ if __name__ == "__main__":
 
                 # Policy loss
                 # TODO: compute the clipped surrogate objective for the policy.
-                pg_loss = None
+                pg_loss = (
+                    torch.min(
+                        ratio,
+                        torch.clamp(
+                            ratio, min=1 - args.clip_coef, max=1 + args.clip_coef
+                        ),
+                    )
+                    * mb_advantages
+                ).mean()
 
                 # Value loss
                 newvalue = newvalue.view(-1)
                 # TODO: compute the value loss as the MSE between the new value and the returns
-                v_loss = None  # td error
+                v_loss = nn.MSELoss()(newvalue, returns[mb_inds])  # td error
 
                 entropy_loss = entropy.mean()
                 loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
@@ -408,7 +416,10 @@ if __name__ == "__main__":
         writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
-        print("SPS:", int(global_step / (time.time() - start_time)))
+        print(
+            "SPS:",
+            int(global_step / (time.time() - start_time)),
+        )
         writer.add_scalar(
             "charts/SPS", int(global_step / (time.time() - start_time)), global_step
         )
