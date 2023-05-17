@@ -12,3 +12,6 @@ exercise04/runs/*
 *submission*
 *old
 *.wlan.uni-mannheim.de*
+*.sh
+*.out
+events.out.tfevents*

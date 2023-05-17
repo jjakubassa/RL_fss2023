@@ -128,7 +128,7 @@ def make_env(env_id, capture_video, run_name, gamma):
         env = RecordVideoV0(
             env,
             f"videos/{run_name}",
-            episode_trigger=lambda episode_id: episode_id % 100 == 0,
+            episode_trigger=lambda episode_id: episode_id % 1000 == 0,
         )
     env = gym.wrappers.ClipAction(env)
     env = gym.wrappers.NormalizeObservation(env)
@@ -342,10 +342,11 @@ if __name__ == "__main__":
                     advantages[t] = delta
                 else:
                     delta = rewards[t] + args.gamma * values[t + 1] - values[t]
-                    advantages[t] = (
-                        delta + args.gamma * args.gae_lambda * advantages[t + 1]
-                    )
-
+                    advantages[t] = delta # not generalized
+                    # advantages[t] = (
+                    #     delta + args.gamma * args.gae_lambda * advantages[t + 1]
+                    # )
+                    
             ###################
             returns = advantages + values
 
