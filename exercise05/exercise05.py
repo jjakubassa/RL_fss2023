@@ -321,9 +321,12 @@ if __name__ == "__main__":
         # Use args.gamma and args.gae_lambda to compute the advantage.
         # Take care of the edge case at the end (i.e. first for the last step that is computed first) as well as whenever an episode was done.
         with torch.no_grad():
+            next_value = agent.get_value(next_obs)
             advantages = torch.zeros_like(rewards)
             # delta = torch.zeros_like(rewards)
-            advantages[-1] = rewards[-1] - values[-1]
+            advantages[-1] = (
+                rewards[-1] + args.gamma * next_value * (1 - dones[-1]) - values[-1]
+            )
 
             # your code here:
             for t in reversed(range(args.num_steps - 1)):  # what about the last step?
