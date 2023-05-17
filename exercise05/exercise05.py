@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
+from gymnasium.experimental.wrappers import RecordVideoV0
 
 
 def parse_args():
@@ -124,11 +125,10 @@ def make_env(env_id, capture_video, run_name, gamma):
     )  # deal with dm_control's Dict observation space
     env = gym.wrappers.RecordEpisodeStatistics(env)
     if capture_video:
-        env = gym.wrappers.RecordVideo(
+        env = RecordVideoV0(
             env,
             f"videos/{run_name}",
-            episode_trigger=lambda episode_id: episode_id % 50 == 0
-            and episode_id > 100,
+            episode_trigger=lambda episode_id: episode_id % 100 == 0,
         )
     env = gym.wrappers.ClipAction(env)
     env = gym.wrappers.NormalizeObservation(env)
