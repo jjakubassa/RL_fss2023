@@ -221,12 +221,10 @@ class Agent(nn.Module):
         # (ii) the probability of the action given the state,
         # (iii) the entropy of the action distribution (can be obtained from the Normal class as well)
         # (iv) and the value of the state.
-        return (
-            action,
-            dist.log_prob(action).sum().item(),
-            dist.entropy(),
-            self.get_value(x),
-        )
+        if x.dim() == 1:
+            return action, dist.log_prob(action).sum(), dist.entropy().sum(), self.get_value(x)
+        else:
+            return action, dist.log_prob(action).sum(1), dist.entropy().sum(1), self.get_value(x)
 
 
 if __name__ == "__main__":
@@ -343,9 +341,9 @@ if __name__ == "__main__":
                 else:
                     delta = rewards[t] + args.gamma * values[t + 1] - values[t]
                     advantages[t] = delta # not generalized
-                    # advantages[t] = (
-                    #     delta + args.gamma * args.gae_lambda * advantages[t + 1]
-                    # )
+                    advantages[t] = (
+                        delta + args.gamma * args.gae_lambda * advantages[t + 1]
+                    )
                     
             ###################
             returns = advantages + values
@@ -386,7 +384,7 @@ if __name__ == "__main__":
                         ),
                     )
                     * mb_advantages
-                ).mean()
+                ).mean()*-1
 
                 # Value loss
                 newvalue = newvalue.view(-1)
