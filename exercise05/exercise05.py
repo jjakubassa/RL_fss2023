@@ -339,10 +339,11 @@ if __name__ == "__main__":
                     advantages[t] = delta
                 else:
                     delta = rewards[t] + args.gamma * values[t + 1] - values[t]
-                    advantages[t] = (
-                        delta + args.gamma * args.gae_lambda * advantages[t + 1]
-                    )
-
+                    advantages[t] = delta # not generalized
+                    # advantages[t] = (
+                    #     delta + args.gamma * args.gae_lambda * advantages[t + 1]
+                    # )
+                    
             ###################
             returns = advantages + values
 
