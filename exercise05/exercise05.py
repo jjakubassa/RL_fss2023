@@ -333,7 +333,7 @@ if __name__ == "__main__":
             advantages = torch.zeros_like(rewards)
             # delta = torch.zeros_like(rewards)
             advantages[-1] = (
-                rewards[-1] + args.gamma * next_value * (1 - next_done[-1]) - values[-1]
+                rewards[-1] + args.gamma * next_value * (1 - next_done) - values[-1]
             )
 
             # your code here:
