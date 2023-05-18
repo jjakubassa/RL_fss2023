@@ -128,7 +128,7 @@ def make_env(env_id, capture_video, run_name, gamma):
         env = RecordVideoV0(
             env,
             f"videos/{run_name}",
-            episode_trigger=lambda episode_id: episode_id % 1000 == 0,
+            episode_trigger=lambda episode_id: episode_id % 10000 == 0,
         )
     env = gym.wrappers.ClipAction(env)
     env = gym.wrappers.NormalizeObservation(env)
@@ -222,9 +222,19 @@ class Agent(nn.Module):
         # (iii) the entropy of the action distribution (can be obtained from the Normal class as well)
         # (iv) and the value of the state.
         if x.dim() == 1:
-            return action, dist.log_prob(action).sum(), dist.entropy().sum(), self.get_value(x)
+            return (
+                action,
+                dist.log_prob(action).sum(),
+                dist.entropy().sum(),
+                self.get_value(x),
+            )
         else:
-            return action, dist.log_prob(action).sum(1), dist.entropy().sum(1), self.get_value(x)
+            return (
+                action,
+                dist.log_prob(action).sum(1),
+                dist.entropy().sum(1),
+                self.get_value(x),
+            )
 
 
 if __name__ == "__main__":
@@ -323,7 +333,7 @@ if __name__ == "__main__":
             advantages = torch.zeros_like(rewards)
             # delta = torch.zeros_like(rewards)
             advantages[-1] = (
-                rewards[-1] + args.gamma * next_value * (1 - dones[-1]) - values[-1]
+                rewards[-1] + args.gamma * next_value * (1 - next_done[-1]) - values[-1]
             )
 
             # your code here:
@@ -340,11 +350,11 @@ if __name__ == "__main__":
                     advantages[t] = delta
                 else:
                     delta = rewards[t] + args.gamma * values[t + 1] - values[t]
-                    advantages[t] = delta # not generalized
+                    advantages[t] = delta  # not generalized
                     advantages[t] = (
                         delta + args.gamma * args.gae_lambda * advantages[t + 1]
                     )
-                    
+
             ###################
             returns = advantages + values
 
@@ -384,7 +394,7 @@ if __name__ == "__main__":
                         ),
                     )
                     * mb_advantages
-                ).mean()*-1
+                ).mean() * -1
 
                 # Value loss
                 newvalue = newvalue.view(-1)
