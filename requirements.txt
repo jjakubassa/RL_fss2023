@@ -1,0 +1,14 @@
+ale_py==0.8.1
+caffeine==0.5
+gym_bandits==0.0.1
+gymnasium[accept-rom-license, atari, other]==0.28.1
+hyperopt==0.2.7
+matplotlib==3.7.1
+mypy==1.1.1
+numpy==1.24
+setuptools==66.0.0
+Shimmy==0.2.1
+stable_baselines3 @ git+https://github.com/DLR-RM/stable-baselines3
+torchvision==0.15.2
+tensorboard==2.13.0
+tqdm==4.65.0

@@ -1,0 +1,24 @@
+---
+title: "Exercise 2"
+subtitle: "Reinforcement Learning"
+author: "Jonas Jakubassa, Marc Scheffler"
+format: pdf
+---
+
+1 a)
+
+We want to show that unweighted importance sampling is unbiased, i.e. $\mathbb{E}_b\left[\frac{\sum_{k \in \mathcal{T}\left(s_k\right)} \rho_{k: T(k)} g_k}{\left|\mathcal{T}\left(s_k\right)\right|}\right]=v_\pi\left(s_k\right)$ where $\mathcal{T}\left(s_k\right)$ are all episodes starting with state $s_k$.
+
+
+1. We can use the linearity of expectations:
+$$\mathbb{E}_b\left[\frac{\sum_{k \in \mathcal{T}\left(s_k\right)} \rho_{k: T(k)} g_k}{\left|\mathcal{T}\left(s_k\right)\right|}\right]= \frac{1}{|\mathcal{T}(s_k)|} * \sum \mathbb{E}_b[\rho_{k,T} * g_k]$$
+
+2. The expectation of the importance sampling estimator can be written as:
+$$
+  \mathbb{E}_b\left[\rho_{k, T} * g_k\right]=\sum_{a_k, s_k} b\left(a_k \mid s_k\right) p\left(s_k\right)\left(\rho_{k, T} * g_k\right)
+$$ 
+
+3. We can can substitute the importance sampling ratio $\rho_{k, T}=\frac{\prod_{i=k}^T \pi\left(a_k \mid s_k\right)}{\prod_{i=k}^T b\left(a_k \mid s_k\right)}$.
+$$
+  \mathbb{E}_b\left[\rho_{k, T} * g_k\right]=\sum_{a_k, s_k} b\left(a_k \mid s_k\right) p\left(s_k\right)\left(\frac{\prod_{i=k}^T \pi\left(a_k \mid s_k\right)}{\prod_{i=k}^T b\left(a_k \mid s_k\right)} * g_k\right)
+$$
